@@ -1,0 +1,376 @@
+// ============================================================================
+// Datum Zero Systems — Prisma Schema (v1.1.0)
+// Multi-tenant native. All corrections CR-01..CR-15 applied. See docs/PRD-Corrections-Log.md.
+// Golden rules (see MANIFEST.md):
+//   • Every tenant-owned row is scoped by organizationId (CR: multi-tenant native).
+//   • Datum Zero detects + classifies; the CLIENT adjudicates outcomes (CR-12).
+//   • Insurance is referral-only; we VERIFY, never bind/collect (CR-03). Fail closed.
+//   • internalLabel is the asset identity spine; external IDs are optional attributes (CR-13).
+// ============================================================================
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// 1. ENTERPRISE SYSTEM CORE (multi-tenant root)
+// ============================================================================
+model Organization {
+  id            String              @id @default(uuid())
+  name          String
+  createdAt     DateTime            @default(now())
+
+  // --- Concierge onboarding (CR-14): tenants provisioned via scripts/seed, no self-serve ---
+  onboardingState OnboardingState   @default(CONCIERGE_PROVISIONED)
+
+  assets        Asset[]
+  integrations  Integration[]
+  ruleSets      RuleSet[]
+  pilots        Pilot[]
+  contracts     ClientContract[]
+  ingestion     IngestionSession[]
+  missions      MissionAssignment[]
+}
+
+enum OnboardingState {
+  CONCIERGE_PROVISIONED // seeded manually by Datum Zero (M1 default)
+  SELF_SERVE            // reserved for M1.5+ (not in initial scope)
+}
+
+// --- Per-client insurance requirement profile (CR-02, CR-09): requirement is a PROFILE, not a number ---
+model ClientContract {
+  id                          String       @id @default(uuid())
+  organizationId              String
+  organization                Organization @relation(fields: [organizationId], references: [id])
+  name                        String
+
+  requiredLiabilityLimit      Decimal      @db.Decimal(14, 2) // e.g. 5_000_000 (utilities/O&G often ≥ $5M)
+  requiresDedicatedAviation   Boolean      @default(true)     // NOT a CGL rider
+  requiresAdditionalInsured   Boolean      @default(true)     // client named AI on pilot policy
+  requiresPrimaryNonContrib   Boolean      @default(true)     // primary & non-contributory
+  requiresWaiverOfSubrogation Boolean      @default(true)
+
+  missions                    MissionAssignment[]
+  createdAt                   DateTime     @default(now())
+
+  @@index([organizationId])
+}
+
+// ============================================================================
+// 2. THE MOAT: CROSS-PLATFORM ASSET REGISTRY (CR-13)
+// internalLabel = canonical spine. External IDs are OPTIONAL, incrementally populated.
+// ============================================================================
+model Asset {
+  id               String       @id @default(uuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+
+  internalLabel    String       // spine, e.g. "PV_ARRAY_04-ROW_12-STR_08" (seeded from as-built/SCADA)
+
+  // --- Spatial identity for auto-binding (CR-13): GPS is the physical-layer match key ---
+  latitude         Decimal?     @db.Decimal(9, 6)
+  longitude        Decimal?     @db.Decimal(9, 6)
+  geoBoundary      Json?        // optional GeoJSON polygon footprint for spatial join
+
+  // --- External system IDs: optional attributes; moat compounds as these attach ---
+  cadObjectId      String?      // BIM/CAD (Phase 2)
+  erpAssetId       String?      // ERP financial record (Phase 2)
+  procoreLocationId Int?        // ops/ticketing node (example)
+
+  anomalies        Anomaly[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([organizationId, internalLabel])
+  @@index([organizationId, latitude, longitude])
+}
+
+// ============================================================================
+// 3. HARDWARE-AGNOSTIC INGESTION
+// ============================================================================
+enum CaptureModality {
+  DRONE_ORTHOMOSAIC
+  DRONE_THERMAL
+  HANDHELD_360_VIDEO
+  CRANE_LASER_SCAN
+  STATIONARY_IOT_SENSOR
+}
+
+model IngestionSession {
+  id              String            @id @default(uuid())
+  organizationId  String
+  organization    Organization      @relation(fields: [organizationId], references: [id])
+  modality        CaptureModality
+  pilotOrNodeId   String            // Pilot.id or IoT unit UUID
+  rawStoragePath  String            // S3 key
+
+  isValidated     Boolean           @default(false) // set by Infield Validator (CR-11 quality firewall)
+
+  // --- NDAA: platform enforces via verified airframe registry, NOT in-browser detection (CR-11) ---
+  isNdaaVerified  Boolean           @default(false) // default FALSE until bound to a verified airframe
+  boundHardwareId String?           // FK to the verified PilotHardware this capture is bound to
+  boundHardware   PilotHardware?    @relation(fields: [boundHardwareId], references: [id])
+
+  mediaAssets     MediaAsset[]
+  mission         MissionAssignment?
+  createdAt       DateTime          @default(now())
+
+  @@index([organizationId])
+}
+
+model MediaAsset {
+  id                 String           @id @default(uuid())
+  ingestionSessionId String
+  ingestionSession   IngestionSession @relation(fields: [ingestionSessionId], references: [id])
+  fullStoragePath    String           // S3 high-res master (COLD tier)
+  capturedAt         DateTime
+  anomalies          Anomaly[]
+}
+
+// ============================================================================
+// 4. ANOMALY — evidence record (CR-12). NEVER a verdict.
+// ============================================================================
+enum QueueStatus {
+  PENDING_QA              // CR-12: 100% pass a Datum Zero QA reviewer before dispatch
+  APPROVED_DISPATCHED
+  REJECTED_FALSE_POSITIVE
+  LOGGED_INTERNAL
+}
+
+model Anomaly {
+  id                 String       @id @default(uuid())
+  organizationId     String       // denormalized for tenant-scoped queries/RLS
+  assetId            String
+  asset              Asset        @relation(fields: [assetId], references: [id])
+  mediaAssetId       String
+  mediaAsset         MediaAsset   @relation(fields: [mediaAssetId], references: [id])
+
+  boundingBox        Int[]        // [x1,y1,x2,y2] within MediaAsset
+  latitude           Decimal?     @db.Decimal(9, 6)
+  longitude          Decimal?     @db.Decimal(9, 6)
+  zAxisOffset        Float?
+
+  // --- Measurement layer (CR-15): classification per published standard ---
+  standardRef        String?      // e.g. "IEC TS 62446-3"
+  classification     String?      // e.g. thermal-abnormality category from the standard's matrix
+  confidenceScore    Float
+  metricDelta        Float        // e.g. °C delta
+  metricUnit         String?      // e.g. "CELSIUS_DELTA"
+  visualCropUrl      String
+  analyticsCropUrl   String
+
+  // --- Adjudication layer (CR-12): recommendation only; client decides outcome ---
+  status             QueueStatus  @default(PENDING_QA)
+  recommendation     String?      // evidence-framed, e.g. "review recommended vs. IEC TS 62446-3 Cat 2"
+  ruleSetId          String?
+  ruleSet            RuleSet?     @relation(fields: [ruleSetId], references: [id])
+
+  // --- Immutable audit trail (CR-12): reconstruct every determination ---
+  modelVersion       String?
+  reviewedById       String?      // Datum Zero QA reviewer
+  reviewedAt         DateTime?
+
+  workOrders         WorkOrderDispatch[]
+  createdAt          DateTime     @default(now())
+
+  @@index([organizationId, status])
+  @@index([assetId])
+}
+
+// ============================================================================
+// 5. RULESETS — standards-anchored, versioned templates (CR-15)
+// ============================================================================
+model RuleSet {
+  id             String          @id @default(uuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  name           String
+  targetModality CaptureModality
+
+  triggerMetric  String          // e.g. "Temp_Delta_Threshold"
+  operator       String          // ">=", "<=", "=="
+  thresholdValue Float
+
+  // --- Standards provenance (CR-15): defaults grounded in published standards, client-overridable ---
+  standardRef    String?         // e.g. "IEC TS 62446-3"
+  standardVersion String?        // e.g. "2017"
+  isTemplate     Boolean         @default(false) // shipped default vs. tenant override
+  version        Int             @default(1)
+
+  routeTargets   String[]        // delivery target keys, e.g. ["GENERIC_WEBHOOK","PDF_DISPATCH"]
+  anomalies      Anomaly[]
+
+  @@index([organizationId])
+}
+
+// ============================================================================
+// 6. FIELD LOGISTICS, VERIFIED AIRFRAMES & INSURANCE (referral-only: CR-03/09/10/11)
+// ============================================================================
+enum PilotTier {
+  TIER_3_ROGUE
+  TIER_2_LEAD
+  TIER_1_APEX_OP
+}
+
+model Pilot {
+  id                String              @id @default(uuid())
+  organizationId    String?             // null = Datum Zero marketplace pool
+  organization      Organization?       @relation(fields: [organizationId], references: [id])
+  firstName         String
+  lastName          String
+  email             String              @unique
+  part107LicenseNum String
+  licenseExpiry     DateTime
+  stripeConnectId   String?             // payout ONLY (never insurance premium — CR-03)
+  tier              PilotTier           @default(TIER_3_ROGUE) // CR: verify default vs Tier-1=Apex intent
+
+  hardwareProfile   PilotHardware[]
+  missions          MissionAssignment[]
+  insurance         PilotInsurance[]    // BYO annual and/or on-demand referral records
+  createdAt         DateTime            @default(now())
+}
+
+// --- Verified airframe registry (CR-11): NDAA enforced by the platform, not the browser ---
+model PilotHardware {
+  id             String             @id @default(uuid())
+  pilotId        String
+  pilot          Pilot              @relation(fields: [pilotId], references: [id])
+  aircraftModel  String
+  sensorType     CaptureModality
+  serialNumber   String             // matched against telemetry at ingestion (not live Remote ID)
+  remoteIdSerial String?            // from uploaded flight logs, if present
+
+  ndaaVerified   Boolean            @default(false) // verified at onboarding
+  approvedListRef String?           // e.g. "Blue UAS" / DIU cleared-list reference
+  verifiedAt     DateTime?
+
+  sessions       IngestionSession[]
+}
+
+enum InsuranceKind {
+  BYO_ANNUAL      // pilot's own annual policy (any carrier)
+  ON_DEMAND       // bound by pilot via referral partner (e.g. SkyWatch)
+}
+
+enum VerificationSource {
+  PROVIDER_API    // authoritative policy-status API (on-demand referral)
+  COI_VENDOR      // TrustLayer/Certificial/etc. extraction of a BYO COI
+  MANUAL_QA       // fallback: human review in cockpit
+}
+
+// --- Insurance = proof-of-coverage record. We verify; we never bind or collect (CR-03/10) ---
+model PilotInsurance {
+  id                    String             @id @default(uuid())
+  pilotId               String
+  pilot                 Pilot              @relation(fields: [pilotId], references: [id])
+  kind                  InsuranceKind
+  providerName          String
+  policyNumber          String?
+  liabilityLimit        Decimal            @db.Decimal(14, 2)
+  isDedicatedAviation   Boolean            @default(false)
+  hasBlanketAI          Boolean            @default(false) // blanket additional-insured endorsement (CR-09)
+  hasPrimaryNonContrib  Boolean            @default(false)
+  hasWaiverOfSubrogation Boolean           @default(false)
+  certificateUrl        String?
+
+  // --- Verification (CR-10): fail closed if not confirmed active-and-adequate for the window ---
+  isVerified            Boolean            @default(false)
+  verificationSource    VerificationSource?
+  verifiedAt            DateTime?
+  coverageStart         DateTime?
+  coverageEnd           DateTime?
+
+  createdAt             DateTime           @default(now())
+
+  @@index([pilotId])
+}
+
+enum MissionStatus {
+  ASSIGNED
+  DATA_UPLOADED
+  QA_CLEARED
+  FUNDS_DISPATCHED
+  CANCELLED
+}
+
+model MissionAssignment {
+  id                 String            @id @default(uuid())
+  organizationId     String
+  organization       Organization      @relation(fields: [organizationId], references: [id])
+  clientContractId   String?
+  clientContract     ClientContract?   @relation(fields: [clientContractId], references: [id])
+  pilotId            String
+  pilot              Pilot             @relation(fields: [pilotId], references: [id])
+  ingestionSessionId String?           @unique
+  ingestionSession   IngestionSession? @relation(fields: [ingestionSessionId], references: [id])
+
+  siteAddress        String
+  targetCoordinates  String            // GeoJSON polygon
+  payoutAmount       Decimal           @db.Decimal(10, 2)
+  status             MissionStatus     @default(ASSIGNED)
+  scheduledDate      DateTime
+  completedAt        DateTime?
+
+  // --- Coverage gate (CR-10): the mission cannot dispatch unless a verified policy meets the profile ---
+  coverageVerified   Boolean           @default(false)
+
+  createdAt          DateTime          @default(now())
+
+  @@index([organizationId])
+}
+
+// ============================================================================
+// 7. INTEGRATIONS & GENERIC DELIVERY (CR-05, CR-14)
+// Generic Delivery Adapter Suite is the M1 product surface. Native adapters are demand-driven (M2).
+// ============================================================================
+enum DeliveryTargetType {
+  GENERIC_WEBHOOK   // canonical JSON payload (packages/adapters/contracts/work-order.schema.json)
+  PDF_DISPATCH      // actionable field report
+  CSV_S3            // structured data drop to client bucket
+  NATIVE_JIRA       // M0 sandbox reference impl / M2 native
+  NATIVE_SERVICENOW // M2 (demand-driven)
+  NATIVE_PROCORE    // M2 (demand-driven)
+  NATIVE_MAXIMO     // M2 (contract-funded)
+  NATIVE_SAP_PM     // M2 (contract-funded)
+}
+
+model Integration {
+  id             String             @id @default(uuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id])
+  targetType     DeliveryTargetType
+  displayName    String
+  config         Json               // endpoint URL, S3 bucket, field mappings, etc.
+  secretVaultKey String?            // AWS Secrets Manager reference (never store secrets in DB)
+  isActive       Boolean            @default(true)
+
+  dispatches     WorkOrderDispatch[]
+
+  @@index([organizationId])
+}
+
+// --- Rate-limited, idempotent outbox (CR: resilient webhook delivery) ---
+model WorkOrderDispatch {
+  id             String       @id @default(uuid())
+  organizationId String
+  anomalyId      String
+  anomaly        Anomaly      @relation(fields: [anomalyId], references: [id])
+  integrationId  String
+  integration    Integration  @relation(fields: [integrationId], references: [id])
+
+  payload        Json         // rendered per work-order.schema.json (evidence-framed — CR-12)
+  idempotencyKey String       @unique
+  attempts       Int          @default(0)
+  lastStatus     Int?
+  isResolved     Boolean      @default(false)
+  retryAfter     DateTime?
+  downstreamRef  String?      // external ticket/ref id returned by the target
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, isResolved])
+}

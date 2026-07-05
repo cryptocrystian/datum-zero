@@ -1,0 +1,30 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# builds
+dist/
+.next/
+out/
+build/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+services/inference/.venv/
+
+# prisma local
+/packages/db/prisma/*.db
+
+# graphify (regenerated artifact)
+graphify-out/
+
+# misc
+.DS_Store
+*.log

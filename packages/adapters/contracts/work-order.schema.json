@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datumzero.systems/contracts/work-order.schema.json",
+  "title": "Datum Zero — Generic Work Order (v1)",
+  "description": "Canonical evidence-framed work-order payload emitted by the Generic Delivery Adapter Suite (GENERIC_WEBHOOK). Designed so a client's IT team can map it to any ticketing system in ~30 minutes with no custom code from Datum Zero. LEGAL BOUNDARY (CR-12): this payload conveys EVIDENCE and a RECOMMENDATION only. It MUST NOT assert a contractual violation, penalty, or back-charge. The client adjudicates all outcomes.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "work_order_id",
+    "idempotency_key",
+    "organization_id",
+    "emitted_at",
+    "asset",
+    "finding",
+    "recommendation",
+    "audit"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "work_order_id": { "type": "string", "description": "Datum Zero dispatch id (WorkOrderDispatch.id)." },
+    "idempotency_key": { "type": "string", "description": "Stable key; safe to receive more than once." },
+    "organization_id": { "type": "string" },
+    "emitted_at": { "type": "string", "format": "date-time" },
+
+    "asset": {
+      "type": "object",
+      "required": ["internal_label"],
+      "additionalProperties": false,
+      "description": "Identity spine + optional external IDs (CR-13).",
+      "properties": {
+        "internal_label": { "type": "string", "example": "PV_ARRAY_04-ROW_12-STR_08" },
+        "latitude": { "type": ["number", "null"], "description": "6-dp WGS84" },
+        "longitude": { "type": ["number", "null"] },
+        "external_ids": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Optional mappings, populated incrementally. e.g. cad_object_id, erp_asset_id, procore_location_id."
+        }
+      }
+    },
+
+    "finding": {
+      "type": "object",
+      "description": "MEASUREMENT layer (CR-15). What was detected and how it classifies against a published standard. Objective, not adjudicative.",
+      "required": ["modality", "confidence_score"],
+      "additionalProperties": false,
+      "properties": {
+        "modality": { "type": "string", "enum": ["DRONE_THERMAL", "DRONE_ORTHOMOSAIC", "HANDHELD_360_VIDEO", "CRANE_LASER_SCAN", "STATIONARY_IOT_SENSOR"] },
+        "standard_ref": { "type": ["string", "null"], "example": "IEC TS 62446-3" },
+        "classification": { "type": ["string", "null"], "description": "Category drawn from the standard's abnormality matrix.", "example": "Thermal abnormality — Category 2" },
+        "metric_delta": { "type": ["number", "null"], "example": 18.4 },
+        "metric_unit": { "type": ["string", "null"], "example": "CELSIUS_DELTA" },
+        "confidence_score": { "type": "number", "minimum": 0, "maximum": 100 },
+        "bounding_box": {
+          "type": ["array", "null"],
+          "items": { "type": "integer" },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "[x1,y1,x2,y2] within the visual crop."
+        },
+        "visual_crop_url": { "type": ["string", "null"], "format": "uri" },
+        "analytics_crop_url": { "type": ["string", "null"], "format": "uri", "description": "Thermal/CAD overlay crop." }
+      }
+    },
+
+    "recommendation": {
+      "type": "object",
+      "description": "ADJUDICATION boundary (CR-12). Evidence-framed recommendation ONLY. No verdict language.",
+      "required": ["text", "recommended_action"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Must use measurement/recommendation phrasing.",
+          "example": "Measured 18.4°C delta at 96.8% confidence; classified per IEC TS 62446-3 (Category 2). Review recommended.",
+          "pattern": "^(?!.*(violation|breach|back-?charge|penalty|liable)).*$"
+        },
+        "recommended_action": { "type": "string", "enum": ["REVIEW", "INSPECT", "WARRANTY_REVIEW", "NONE"] },
+        "priority_hint": { "type": ["string", "null"], "enum": ["LOW", "MEDIUM", "HIGH", null] }
+      }
+    },
+
+    "audit": {
+      "type": "object",
+      "description": "Immutable provenance (CR-12). Enables reconstruction of any determination.",
+      "required": ["captured_at", "model_version", "reviewed_by", "reviewed_at"],
+      "additionalProperties": false,
+      "properties": {
+        "captured_at": { "type": "string", "format": "date-time" },
+        "model_version": { "type": "string", "example": "thermal-detect@0.3.1" },
+        "reviewed_by": { "type": "string", "description": "Datum Zero QA reviewer id — 100% human gate (CR-12)." },
+        "reviewed_at": { "type": "string", "format": "date-time" },
+        "ingestion_session_id": { "type": ["string", "null"] },
+        "ndaa_verified": { "type": "boolean", "description": "Capture bound to a verified airframe (CR-11)." }
+      }
+    }
+  }
+}

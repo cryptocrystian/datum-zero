@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Layer 2 enforcement — the manifest-compliance suite must pass on every change.
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - name: Manifest compliance guardrails (CR-12, CR-02, governance)
+        run: pytest tests/guardrails -q
+
+  schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate Prisma schema
+        working-directory: packages/db
+        run: npx --yes prisma@latest validate --schema prisma/schema.prisma
+      - name: Validate work-order JSON contract
+        run: |
+          npx --yes ajv-cli@5 compile -s packages/adapters/contracts/work-order.schema.json \
+          || node -e "JSON.parse(require('fs').readFileSync('packages/adapters/contracts/work-order.schema.json'));console.log('contract is valid JSON')"
+
+  # Placeholders wired now so the gates exist from M0-01; fill as code lands.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "TODO M0-01 - pnpm install, typecheck, lint, test apps/web"
+
+  inference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "TODO M0-05 - pytest services/inference"
