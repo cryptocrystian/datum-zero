@@ -19,14 +19,5 @@ def test_health_ok():
     assert body["service"] == "inference"
 
 
-def test_process_accepts_session():
-    res = client.post(
-        "/internal/process",
-        json={
-            "ingestion_session_id": "00000000-0000-0000-0000-000000000001",
-            "organization_id": "00000000-0000-0000-0000-000000000001",
-            "raw_storage_path": "s3://datum-zero-dev/org/x/ingest/y/capture.tiff",
-        },
-    )
-    assert res.status_code == 202
-    assert res.json()["accepted"] is True
+# /internal/process now runs the real pipeline (storage + callback); it is covered end-to-end by
+# test_detector.py::test_process_session_pipeline_with_local_storage.

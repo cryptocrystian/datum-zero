@@ -142,11 +142,21 @@ enum QueueStatus {
   LOGGED_INTERNAL
 }
 
+// --- Spatial binding lifecycle (CR-16): an anomaly is created at inference time, BEFORE it is
+// bound to an Asset (binding is M0-06). It may also land off-registry. So assetId is nullable and
+// the anomaly starts UNBOUND_REVIEW; an unbound anomaly can never dispatch (fail closed). ---
+enum SpatialBindingStatus {
+  UNBOUND_REVIEW // created by inference; not yet resolved to an Asset (or no confident match)
+  BOUND          // resolved to a single Asset within the org (M0-06)
+}
+
 model Anomaly {
   id                 String       @id @default(uuid())
   organizationId     String       // denormalized for tenant-scoped queries/RLS
-  assetId            String
-  asset              Asset        @relation(fields: [assetId], references: [id])
+  // CR-16: nullable — set by spatial auto-binding (M0-06), not at inference time.
+  assetId            String?
+  asset              Asset?       @relation(fields: [assetId], references: [id])
+  spatialBindingStatus SpatialBindingStatus @default(UNBOUND_REVIEW)
   mediaAssetId       String
   mediaAsset         MediaAsset   @relation(fields: [mediaAssetId], references: [id])
 

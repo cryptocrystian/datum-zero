@@ -1,15 +1,16 @@
 """
 Datum Zero — Inference service (FastAPI).
 
-Role (MANIFEST §2): consume an ingestion event, run CV detection, classify against the standard's
-matrix (CR-15), compute metricDelta, crop, spatial-bind, then POST an evidence-framed result to the
-Next.js callback. This scaffold exposes /health and a stubbed processing endpoint; real detection
-lands in M0-05. The engine detects + classifies only — it NEVER adjudicates (CR-12).
+Role (MANIFEST §2): consume an ingestion event, run the thermal detector, compute metricDelta,
+crop, then POST an EVIDENCE-ONLY result to the Next.js callback. The engine MEASURES only — it
+never classifies against a standard (that is M0-07) and NEVER adjudicates (CR-12).
 """
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, status
 from pydantic import BaseModel
+
+from .pipeline import process_session
 
 app = FastAPI(title="Datum Zero Inference", version="0.0.0")
 
@@ -24,13 +25,29 @@ class ProcessRequest(BaseModel):
     ingestion_session_id: str
     organization_id: str
     raw_storage_path: str
+    # Capture coordinates from telemetry/EXIF (fixture defaults applied downstream if omitted).
+    latitude: float | None = None
+    longitude: float | None = None
+    captured_at: str | None = None
 
 
 @app.post("/internal/process", status_code=status.HTTP_202_ACCEPTED)
 def process(req: ProcessRequest) -> dict:
     """
-    Stub (M0-05): enqueue/execute detection for an ingestion session.
-    Real implementation runs the thermal detector, classifies per IEC TS 62446-3,
-    then POSTs the evidence payload to INFERENCE_CALLBACK_URL. Returns 202 for now.
+    M0-05: run the deterministic thermal detector for an ingestion session, write crops through
+    the StoragePort, and POST the evidence-only payload to the Next.js callback, which creates the
+    Anomaly UNBOUND (CR-16). No classification/recommendation here (M0-07).
     """
-    return {"accepted": True, "ingestion_session_id": req.ingestion_session_id}
+    result = process_session(
+        ingestion_session_id=req.ingestion_session_id,
+        organization_id=req.organization_id,
+        raw_storage_path=req.raw_storage_path,
+        latitude=req.latitude,
+        longitude=req.longitude,
+        captured_at=req.captured_at,
+    )
+    return {
+        "accepted": True,
+        "ingestion_session_id": req.ingestion_session_id,
+        "anomaly": result["callback"],
+    }
