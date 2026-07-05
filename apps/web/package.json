@@ -13,7 +13,8 @@
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@dz/db": "workspace:*"
+    "@dz/db": "workspace:*",
+    "@dz/storage": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

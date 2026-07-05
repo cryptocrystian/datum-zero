@@ -10,14 +10,30 @@
  *   • A small, regular PV string grid with real lat/long (spatial-binding fixtures, CR-13)
  *   • 1 standards-anchored RuleSet template (IEC TS 62446-3, CR-15)
  *   • 2 delivery Integrations: GENERIC_WEBHOOK + NATIVE_JIRA sandbox (CR-05/14)
+ *   • 1 Pilot + verified & unverified PilotHardware airframes (M0-04, CR-11):
+ *       - VERIFIED serial   → binds; capture proceeds
+ *       - UNVERIFIED serial → registered but not NDAA-verified; fails closed
  */
-import { prisma, CaptureModality, DeliveryTargetType, OnboardingState } from "../src/index";
+import {
+  prisma,
+  CaptureModality,
+  DeliveryTargetType,
+  OnboardingState,
+  PilotTier,
+} from "../src/index";
 
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
 const CONTRACT_ID = "00000000-0000-0000-0000-000000000002";
 const RULESET_ID = "00000000-0000-0000-0000-000000000003";
 const WEBHOOK_ID = "00000000-0000-0000-0000-000000000004";
 const JIRA_ID = "00000000-0000-0000-0000-000000000005";
+const PILOT_ID = "00000000-0000-0000-0000-000000000006";
+const HW_VERIFIED_ID = "00000000-0000-0000-0000-000000000007";
+const HW_UNVERIFIED_ID = "00000000-0000-0000-0000-000000000008";
+
+// Airframe serials matched at ingestion against the verified registry (CR-11).
+export const VERIFIED_AIRFRAME_SERIAL = "DZ-THERMAL-0001";
+export const UNVERIFIED_AIRFRAME_SERIAL = "DZ-THERMAL-9999";
 
 // Example high-DNI solar site (near Tucson, AZ). Regular geometry → deterministic spatial binding.
 const BASE_LAT = 32.2226;
@@ -116,8 +132,57 @@ async function main() {
     },
   });
 
+  // --- Pilot + verified airframe registry (M0-04, CR-11) ---
+  // NDAA is enforced by THIS registry (serial match at ingestion), not in-browser attestation.
+  const pilot = await prisma.pilot.upsert({
+    where: { id: PILOT_ID },
+    update: {},
+    create: {
+      id: PILOT_ID,
+      organizationId: org.id,
+      firstName: "Ada",
+      lastName: "Skyler",
+      email: "ada.skyler@lighthouse-solar.example",
+      part107LicenseNum: "FA3X7K9P2M",
+      licenseExpiry: new Date("2027-12-31T00:00:00Z"),
+      tier: PilotTier.TIER_1_APEX_OP,
+    },
+  });
+
+  // Verified airframe → binds; capture proceeds.
+  await prisma.pilotHardware.upsert({
+    where: { id: HW_VERIFIED_ID },
+    update: {},
+    create: {
+      id: HW_VERIFIED_ID,
+      pilotId: pilot.id,
+      aircraftModel: "Skydio X10D",
+      sensorType: CaptureModality.DRONE_THERMAL,
+      serialNumber: VERIFIED_AIRFRAME_SERIAL,
+      remoteIdSerial: VERIFIED_AIRFRAME_SERIAL,
+      ndaaVerified: true,
+      approvedListRef: "Blue UAS (DIU cleared list)",
+      verifiedAt: new Date("2026-01-15T00:00:00Z"),
+    },
+  });
+
+  // Registered but NOT NDAA-verified → fixture for the fail-closed path.
+  await prisma.pilotHardware.upsert({
+    where: { id: HW_UNVERIFIED_ID },
+    update: {},
+    create: {
+      id: HW_UNVERIFIED_ID,
+      pilotId: pilot.id,
+      aircraftModel: "Generic Import Thermal",
+      sensorType: CaptureModality.DRONE_THERMAL,
+      serialNumber: UNVERIFIED_AIRFRAME_SERIAL,
+      ndaaVerified: false,
+    },
+  });
+
   console.log(
-    `[seed] concierge tenant ready: org=${org.id} · ${assetCount} assets · 1 ruleset · 2 integrations`,
+    `[seed] concierge tenant ready: org=${org.id} · ${assetCount} assets · 1 ruleset · 2 integrations · ` +
+      `1 pilot · airframes(verified=${VERIFIED_AIRFRAME_SERIAL}, unverified=${UNVERIFIED_AIRFRAME_SERIAL})`,
   );
 }
 

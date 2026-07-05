@@ -12,6 +12,7 @@ dist/
 .next/
 out/
 build/
+*.tsbuildinfo
 
 # python
 __pycache__/
@@ -21,6 +22,9 @@ services/inference/.venv/
 
 # prisma local
 /packages/db/prisma/*.db
+
+# local object storage (StoragePort filesystem fallback)
+.data/
 
 # graphify (regenerated artifact)
 graphify-out/
