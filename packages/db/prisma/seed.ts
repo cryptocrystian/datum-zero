@@ -73,12 +73,16 @@ async function main() {
   let assetCount = 0;
   for (let r = 1; r <= ROWS; r++) {
     for (let s = 1; s <= STRINGS; s++) {
-      const label = `PV_ARRAY_04-ROW_${String(r).padStart(2, "0")}-STR_${String(s).padStart(2, "0")}`;
+      // Canonical asset-label standard (CR-17): SITE_ID-ARRAY_ID-ROW_ID-STRING_ID.
+      // SITE_ID (APEX_SOLAR = physical site) is intentionally distinct from the tenant org
+      // "Lighthouse Solar O&M" (the operator); one operator runs many named sites.
+      const label = `APEX_SOLAR-GRID_04-ROW_${String(r).padStart(2, "0")}-STR_${String(s).padStart(2, "0")}`;
       const latitude = (BASE_LAT + r * 0.00009).toFixed(6); // ~10m row spacing
       const longitude = (BASE_LON + s * 0.00011).toFixed(6);
+      // Converge on re-seed: update existing rows to the canonical label + coords (CR-17 migration).
       await prisma.asset.upsert({
         where: { id: assetId(r, s) },
-        update: {},
+        update: { internalLabel: label, latitude, longitude },
         create: { id: assetId(r, s), organizationId: org.id, internalLabel: label, latitude, longitude },
       });
       assetCount++;
