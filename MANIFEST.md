@@ -1,6 +1,8 @@
 # Datum Zero Systems — Core System Manifest
 
-**Version:** 1.0.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
+**Version:** 1.1.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
+
+> **Changelog — 1.1.0:** index CR-16 (unbound-anomaly / `spatialBindingStatus`) and CR-17 (canonical asset labels) in §9. No commandment change.
 
 > This is the single source of truth for how Datum Zero is built. Every development thread,
 > code-generation sequence, and engineering hire **inherits these decisions and does not
@@ -8,7 +10,7 @@
 > amendment (bump the version, note it in the decision log) — not an ad-hoc deviation in code.
 >
 > The **"why"** behind every rule lives in [`docs/PRD-Corrections-Log.md`](./docs/PRD-Corrections-Log.md)
-> (decisions CR-01…CR-15). This manifest is the **"what."**
+> (decisions CR-01…CR-17). This manifest is the **"what."**
 
 ---
 
@@ -219,6 +221,8 @@ Every rule here traces to a locked decision in [`docs/PRD-Corrections-Log.md`](.
 | Asset Registry | CR-13 |
 | Milestone ladder & generic adapter | CR-14 |
 | Standards-based RuleSets | CR-15 |
+| Anomaly spatial-binding lifecycle | CR-16 |
+| Canonical asset labels | CR-17 |
 
 ---
 
