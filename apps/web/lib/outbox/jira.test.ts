@@ -4,6 +4,7 @@ import {
   mapToJiraIssue,
   buildJiraSummary,
   buildJiraDescriptionLines,
+  resolveIssueTypeId,
   type RenderContext,
 } from "@dz/adapters";
 
@@ -39,14 +40,27 @@ function ctx(overrides: Partial<RenderContext["anomaly"]> = {}): RenderContext {
 }
 
 describe("NATIVE_JIRA mapping (M0-10, CR-05, CR-12)", () => {
-  it("maps the canonical payload to a Jira Cloud issue (project DZ)", () => {
-    const issue = mapToJiraIssue(renderWorkOrder(ctx()));
+  it("maps the canonical payload to a Jira Cloud issue (project DZ, resolved issue type id)", () => {
+    const issue = mapToJiraIssue(renderWorkOrder(ctx()), { projectKey: "DZ", issueTypeId: "10001" });
     expect(issue.fields.project.key).toBe("DZ");
-    expect(issue.fields.issuetype.name).toBe("Task");
+    // Team-managed project: issue type is referenced by id, not a global name.
+    expect(issue.fields.issuetype.id).toBe("10001");
     expect(issue.fields.summary).toContain("APEX_SOLAR-GRID_04-ROW_02-STR_03");
     expect(issue.fields.summary).toContain("review recommended");
     expect(issue.fields.description.type).toBe("doc"); // ADF
     expect(issue.fields.labels).toContain("datum-zero");
+  });
+
+  it("resolves the 'Task' issue type id from project create-metadata", () => {
+    const types = [
+      { id: "10002", name: "Epic", subtask: false },
+      { id: "10001", name: "Task", subtask: false },
+      { id: "10003", name: "Subtask", subtask: true },
+    ];
+    expect(resolveIssueTypeId(types, "Task")).toBe("10001");
+    // Falls back to the first non-subtask type when the preferred name is absent.
+    expect(resolveIssueTypeId([{ id: "9", name: "Story", subtask: false }], "Task")).toBe("9");
+    expect(resolveIssueTypeId([{ id: "1", name: "Subtask", subtask: true }], "Task")).toBeNull();
   });
 
   it("summary + description are evidence-framed, never a verdict (CR-12)", () => {
@@ -60,7 +74,7 @@ describe("NATIVE_JIRA mapping (M0-10, CR-05, CR-12)", () => {
 
   it("bound-but-unclassified still yields an evidence-framed issue", () => {
     const p = renderWorkOrder(ctx({ classification: null, recommendation: null, metricDelta: 6.1 }));
-    const issue = mapToJiraIssue(p);
+    const issue = mapToJiraIssue(p, { projectKey: "DZ", issueTypeId: "10001" });
     expect(issue.fields.summary).toContain("Thermal finding");
     expect(issue.fields.summary).not.toMatch(VERDICT);
     expect(buildJiraDescriptionLines(p as never).join("\n")).toContain("review recommended");

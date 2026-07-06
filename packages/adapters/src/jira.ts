@@ -5,6 +5,9 @@ import { resolveJiraCredentials } from "./secrets";
  * NATIVE_JIRA adapter (CR-05) — maps the IDENTICAL canonical work order to a Jira Cloud issue.
  * Same routing interface as the generic webhook; the payload is the same, only the mapping differs.
  * Evidence-framed summary/description ONLY — never a verdict (CR-12).
+ *
+ * The DZ project is TEAM-MANAGED, so the issue type is resolved from the project's create-metadata
+ * (issue type IDs are project-scoped) rather than a global type name.
  */
 
 const DEFAULT_PROJECT_KEY = "DZ";
@@ -32,6 +35,12 @@ interface WorkOrder {
     reviewed_at: string;
     ndaa_verified?: boolean;
   };
+}
+
+interface JiraIssueType {
+  id: string;
+  name: string;
+  subtask?: boolean;
 }
 
 const coord = (n: number | null): string => (n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(6)}`);
@@ -71,19 +80,35 @@ function adf(lines: string[]) {
   };
 }
 
-/** Map the canonical work order → a Jira Cloud create-issue body (project DZ). */
-export function mapToJiraIssue(payload: unknown, projectKey: string = DEFAULT_PROJECT_KEY) {
+/**
+ * Pick the project's issue type by name (default "Task"), falling back to the first non-subtask
+ * type. Team-managed projects have project-scoped type IDs, so we key on the id, not a global name.
+ */
+export function resolveIssueTypeId(issueTypes: JiraIssueType[], preferredName = "Task"): string | null {
+  const exact = issueTypes.find((t) => !t.subtask && t.name.toLowerCase() === preferredName.toLowerCase());
+  if (exact) return exact.id;
+  const firstStandard = issueTypes.find((t) => !t.subtask);
+  return firstStandard?.id ?? null;
+}
+
+/** Map the canonical work order → a Jira Cloud create-issue body (project-scoped issue type id). */
+export function mapToJiraIssue(
+  payload: unknown,
+  opts: { projectKey?: string; issueTypeId: string },
+) {
   const p = payload as WorkOrder;
   return {
     fields: {
-      project: { key: projectKey },
-      issuetype: { name: "Task" },
+      project: { key: opts.projectKey ?? DEFAULT_PROJECT_KEY },
+      issuetype: { id: opts.issueTypeId },
       summary: buildJiraSummary(p),
       description: adf(buildJiraDescriptionLines(p)),
       labels: ["datum-zero", `dz-${p.work_order_id}`], // stable, traceable (no spaces/colons)
     },
   };
 }
+
+const retryableStatus = (s: number): boolean => s >= 500 || s === 429;
 
 export const nativeJiraAdapter: DeliveryAdapter = {
   targetType: "NATIVE_JIRA",
@@ -94,16 +119,33 @@ export const nativeJiraAdapter: DeliveryAdapter = {
     if (!creds) return { ok: false, status: 0, downstreamRef: null, retryable: false };
 
     const projectKey = (target.config as { projectKey?: string } | null)?.projectKey ?? DEFAULT_PROJECT_KEY;
-    const issue = mapToJiraIssue(payload, projectKey);
+    const base = creds.baseUrl.replace(/\/$/, "");
     const auth = "Basic " + Buffer.from(`${creds.email}:${creds.apiToken}`).toString("base64");
-    const url = `${creds.baseUrl.replace(/\/$/, "")}/rest/api/3/issue`;
+    const headers = { accept: "application/json", authorization: auth };
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 10_000);
+    const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 15_000);
     try {
-      const res = await fetch(url, {
+      // 1) Resolve the project-scoped issue type from create-metadata (team-managed project).
+      const metaRes = await fetch(
+        `${base}/rest/api/3/issue/createmeta/${encodeURIComponent(projectKey)}/issuetypes`,
+        { headers, signal: controller.signal },
+      );
+      if (!metaRes.ok) {
+        return { ok: false, status: metaRes.status, downstreamRef: null, retryable: retryableStatus(metaRes.status) };
+      }
+      const meta = (await metaRes.json()) as { values?: JiraIssueType[]; issueTypes?: JiraIssueType[] };
+      const issueTypeId = resolveIssueTypeId(meta.values ?? meta.issueTypes ?? [], "Task");
+      if (!issueTypeId) {
+        // Project exposes no usable issue type — misconfigured, not retryable.
+        return { ok: false, status: metaRes.status, downstreamRef: null, retryable: false };
+      }
+
+      // 2) Create the issue.
+      const issue = mapToJiraIssue(payload, { projectKey, issueTypeId });
+      const res = await fetch(`${base}/rest/api/3/issue`, {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json", authorization: auth },
+        headers: { ...headers, "content-type": "application/json" },
         body: JSON.stringify(issue),
         signal: controller.signal,
       });
@@ -117,8 +159,7 @@ export const nativeJiraAdapter: DeliveryAdapter = {
       }
 
       const ok = res.status >= 200 && res.status < 300;
-      const retryable = res.status >= 500 || res.status === 429;
-      return { ok, status: res.status, downstreamRef, retryable };
+      return { ok, status: res.status, downstreamRef, retryable: retryableStatus(res.status) };
     } catch {
       return { ok: false, status: 0, downstreamRef: null, retryable: true };
     } finally {
