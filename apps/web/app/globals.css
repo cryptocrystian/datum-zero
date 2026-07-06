@@ -1,1 +1,35 @@
 @import "tailwindcss";
+
+/* Datum Zero — industrial dark mode (docs/DESIGN-SYSTEM.md). Tokens via Tailwind v4 @theme. */
+@theme {
+  --color-datum-midnight: #1a253a; /* content stage / global canvas */
+  --color-datum-darknavy: #121926; /* sidebar rail, disabled input bg */
+  --color-datum-cardbg: #151926; /* content cards / elevated panels */
+  --color-datum-slate: #6d7278; /* borders, crosshairs, idle, secondary text */
+  --color-datum-charcoal: #2e2e2e; /* deep dividers */
+
+  --color-tactical-gold: #e9d700; /* emphasis only — active focal markers, calculated anomalies */
+  --color-tactical-goldmuted: #c49f30; /* secondary gold / hover */
+  --color-tactical-red: #8a2424; /* rejected logs, out-of-spec variances */
+  --color-status-green: #3fb950; /* System Status: OK — success only */
+
+  /* Interface = Inter (Vertex Sans fallback); Data = JetBrains Mono (Datum Mono fallback). */
+  --font-sans: var(--font-inter), "Vertex Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), "Datum Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+
+html,
+body {
+  background-color: var(--color-datum-midnight);
+  color: #ffffff;
+  font-family: var(--font-sans);
+}
+
+/* Subtle blueprint-grid texture for tactical insets. */
+.blueprint-grid {
+  background-color: var(--color-datum-darknavy);
+  background-image:
+    linear-gradient(rgba(109, 114, 120, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(109, 114, 120, 0.12) 1px, transparent 1px);
+  background-size: 16px 16px;
+}

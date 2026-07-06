@@ -23,6 +23,10 @@ CLIENT_FACING_GLOBS = [
     "apps/web/**/adapters/**/*",
     # The classification/recommendation generator emits client-facing text (M0-07, CR-12).
     "apps/web/lib/rules/**/*.ts",
+    # The cockpit UI + QA/outbox services are client-facing copy — evidence, not verdict (M0-08, CR-12).
+    "apps/web/app/**/*.tsx",
+    "apps/web/lib/qa/**/*.ts",
+    "apps/web/lib/outbox/**/*.ts",
 ]
 
 ALLOW_MARK = "guardrail:allow-verdict-term"  # explicit, reviewed escape hatch on a single line
