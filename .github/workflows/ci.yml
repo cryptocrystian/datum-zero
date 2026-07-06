@@ -69,3 +69,46 @@ jobs:
       - name: Test inference service
         working-directory: services/inference
         run: pytest -q
+
+  # End-to-end walking-skeleton DoD path (M0-12) against real Postgres + Redis.
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dz
+          POSTGRES_PASSWORD: dz_local_dev
+          POSTGRES_DB: datum_zero
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U dz -d datum_zero"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+      redis:
+        image: redis:7
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 15
+    env:
+      DATABASE_URL: postgresql://dz:dz_local_dev@localhost:5432/datum_zero
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Enable pnpm (corepack)
+        run: corepack enable
+      - name: Install workspace (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Prisma migrate deploy + generate
+        run: |
+          pnpm --filter @dz/db exec prisma migrate deploy
+          pnpm --filter @dz/db exec prisma generate
+      - name: Seed concierge tenant
+        run: pnpm db:seed
+      - name: E2E — DoD walking-skeleton path
+        run: pnpm --filter @dz/web test:e2e
