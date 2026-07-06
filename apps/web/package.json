@@ -16,9 +16,12 @@
     "react-dom": "^19.0.0",
     "@dz/db": "workspace:*",
     "@dz/storage": "workspace:*",
+    "@dz/adapters": "workspace:*",
     "@radix-ui/react-slider": "^1.2.0",
     "@radix-ui/react-select": "^2.1.0",
-    "mapbox-gl": "^3.9.0"
+    "mapbox-gl": "^3.9.0",
+    "bullmq": "^5.34.0",
+    "ioredis": "^5.4.1"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

@@ -53,6 +53,8 @@ def test_no_verdict_language_in_client_facing_source():
     for f in _iter_files(CLIENT_FACING_GLOBS):
         if not f.is_file():
             continue
+        if "node_modules" in f.parts or ".next" in f.parts:
+            continue  # skip symlinked workspace deps / build output
         for i, line in enumerate(f.read_text(errors="ignore").splitlines(), 1):
             if ALLOW_MARK in line:
                 continue

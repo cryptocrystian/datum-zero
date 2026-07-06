@@ -1,5 +1,6 @@
 import { prisma, QueueStatus, SpatialBindingStatus } from "@dz/db";
 import { classifyAnomaly } from "../rules/classify";
+import { dispatchAnomaly } from "../outbox/dispatch";
 
 /**
  * M0-08 — QA review service (CR-12). Every query is organizationId-scoped (multi-tenant native).
@@ -128,7 +129,8 @@ export async function approveAnomaly(anomalyId: string, organizationId: string, 
     where: { id: anomalyId },
     data: { status: QueueStatus.APPROVED_DISPATCHED, reviewedById: reviewerId, reviewedAt: new Date() },
   });
-  // No dispatch here — the guarded outbox (M0-09) consumes APPROVED_DISPATCHED anomalies.
+  // Dispatch ONLY through the guarded entry point — the 100% QA gate re-runs there (CR-12).
+  await dispatchAnomaly(anomalyId, organizationId);
 }
 
 /** Reject → REJECTED_FALSE_POSITIVE + reviewer stamps (audit trail, CR-12). */

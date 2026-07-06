@@ -11,6 +11,7 @@
     "dev": "concurrently -n web,infer -c blue,green \"pnpm --filter @dz/web dev\" \"pnpm run dev:infer\"",
     "dev:web": "pnpm --filter @dz/web dev",
     "dev:infer": "cd services/inference && uv run $([ -f ../../.env ] && echo --env-file ../../.env) uvicorn app.main:app --reload --port 8000",
+    "worker": "pnpm --filter @dz/db exec tsx ../../apps/web/lib/outbox/worker-main.ts",
     "build": "pnpm -r --filter ./apps/* build",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
