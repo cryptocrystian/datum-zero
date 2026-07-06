@@ -12,13 +12,13 @@ import { prisma } from "@dz/db";
  * can be swapped later (the app consumes it through lib/session.ts).
  */
 
-// Concierge-only adapter: never auto-create a user. (@auth/core minor-version skew → bridge the type.)
-const adapter = {
+// Concierge-only adapter: never auto-create a user (@auth/core pinned to one version — no skew).
+const adapter: Adapter = {
   ...PrismaAdapter(prisma),
   createUser() {
     throw new Error("No self-serve signup — users are concierge-provisioned (CR-14).");
   },
-} as unknown as Adapter;
+};
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter,

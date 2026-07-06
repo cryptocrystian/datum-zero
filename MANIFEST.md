@@ -1,7 +1,8 @@
 # Datum Zero Systems — Core System Manifest
 
-**Version:** 1.1.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
+**Version:** 1.2.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
 
+> **Changelog — 1.2.0:** index CR-18 (marketing-copy posture), CR-19 (provisional classification thresholds), and CR-20 (real auth + sessions) in §9. No commandment change.
 > **Changelog — 1.1.0:** index CR-16 (unbound-anomaly / `spatialBindingStatus`) and CR-17 (canonical asset labels) in §9. No commandment change.
 
 > This is the single source of truth for how Datum Zero is built. Every development thread,
@@ -223,6 +224,9 @@ Every rule here traces to a locked decision in [`docs/PRD-Corrections-Log.md`](.
 | Standards-based RuleSets | CR-15 |
 | Anomaly spatial-binding lifecycle | CR-16 |
 | Canonical asset labels | CR-17 |
+| Marketing-copy posture | CR-18 |
+| Provisional classification thresholds | CR-19 |
+| Authentication & sessions | CR-20 |
 
 ---
 
