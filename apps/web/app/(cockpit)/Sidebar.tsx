@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOutAction } from "./auth-actions";
 
 // M0 cockpit routes. Only /queue is built; the rest are placeholders (disabled) to avoid dead links.
 const ROUTES = [
@@ -12,7 +13,7 @@ const ROUTES = [
   { href: "/admin", label: "Admin", enabled: false },
 ];
 
-export function Sidebar() {
+export function Sidebar({ user }: { user: { name: string | null; email: string | null; role: string } }) {
   const pathname = usePathname();
   return (
     <aside className="flex w-[260px] shrink-0 flex-col border-r border-datum-slate/25 bg-datum-darknavy">
@@ -54,12 +55,25 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-datum-slate/20 px-5 py-4">
+      <div className="space-y-3 border-t border-datum-slate/20 px-5 py-4">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-status-green shadow-[0_0_6px_var(--color-status-green)]" />
           <span className="font-mono text-[11px] uppercase tracking-wide text-datum-slate">
             System Status: OK
           </span>
+        </div>
+
+        <div className="border-t border-datum-slate/20 pt-3">
+          <div className="truncate font-mono text-[11px] text-white">{user.name ?? user.email}</div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-datum-slate">{user.role}</div>
+          <form action={signOutAction} className="mt-2">
+            <button
+              type="submit"
+              className="w-full rounded-sm border border-datum-slate/60 px-3 py-1.5 text-left font-mono text-[10px] uppercase tracking-wider text-datum-slate transition-colors hover:border-tactical-red hover:text-tactical-red"
+            >
+              [ Sign out ]
+            </button>
+          </form>
         </div>
       </div>
     </aside>

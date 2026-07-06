@@ -3,7 +3,7 @@ import { assertApprovedForDispatch, DispatchGateError, type DispatchGateInput } 
 
 const approved: DispatchGateInput = {
   status: "APPROVED_DISPATCHED",
-  reviewedById: "stub-qa-reviewer",
+  reviewedById: "00000000-0000-0000-0000-0000000000a1",
   reviewedAt: new Date("2026-07-06T00:00:00Z"),
   spatialBindingStatus: "BOUND",
 };

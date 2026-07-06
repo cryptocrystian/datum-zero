@@ -8,8 +8,8 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 
 export async function approveAction(anomalyId: string): Promise<ActionResult> {
   try {
-    const reviewer = getCurrentReviewer();
-    await approveAnomaly(anomalyId, getCurrentOrgId(), reviewer.id);
+    const [orgId, reviewer] = await Promise.all([getCurrentOrgId(), getCurrentReviewer()]);
+    await approveAnomaly(anomalyId, orgId, reviewer.id);
     revalidatePath("/queue");
     return { ok: true };
   } catch (e) {
@@ -19,8 +19,8 @@ export async function approveAction(anomalyId: string): Promise<ActionResult> {
 
 export async function rejectAction(anomalyId: string): Promise<ActionResult> {
   try {
-    const reviewer = getCurrentReviewer();
-    await rejectAnomaly(anomalyId, getCurrentOrgId(), reviewer.id);
+    const [orgId, reviewer] = await Promise.all([getCurrentOrgId(), getCurrentReviewer()]);
+    await rejectAnomaly(anomalyId, orgId, reviewer.id);
     revalidatePath("/queue");
     return { ok: true };
   } catch (e) {
@@ -30,7 +30,7 @@ export async function rejectAction(anomalyId: string): Promise<ActionResult> {
 
 export async function bindAction(anomalyId: string, assetId: string): Promise<ActionResult> {
   try {
-    await bindAnomalyToAsset(anomalyId, getCurrentOrgId(), assetId);
+    await bindAnomalyToAsset(anomalyId, await getCurrentOrgId(), assetId);
     revalidatePath("/queue");
     return { ok: true };
   } catch (e) {

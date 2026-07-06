@@ -50,5 +50,7 @@ def test_provenance_reconstructs_the_full_chain():
 
 def test_route_is_org_scoped():
     src = ROUTE.read_text()
-    assert "getCurrentOrgId()" in src, "audit route must scope to the current org (multi-tenant native)"
+    # Org scope derives from the authenticated session (M1-01/CR-20), not a hardcoded/stub id.
+    assert "getSession(" in src, "audit route must derive the org from the authenticated session"
+    assert "session.organizationId" in src, "provenance must be scoped to the session's tenant"
     assert "getProvenance(" in src

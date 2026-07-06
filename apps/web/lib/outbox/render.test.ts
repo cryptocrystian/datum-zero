@@ -23,7 +23,7 @@ function ctx(overrides: Partial<RenderContext["anomaly"]> = {}): RenderContext {
         "Measured +18.4°C delta vs. median (confidence 96.8%); classified IEC TS 62446-3 Cat 2 — thermal abnormality. Review recommended vs. IEC TS 62446-3 2017.",
       standardRef: "IEC TS 62446-3",
       modelVersion: "thermal-threshold-v0.1.0",
-      reviewedById: "stub-qa-reviewer",
+      reviewedById: "00000000-0000-0000-0000-0000000000a1",
       reviewedAt: "2026-07-06T00:00:00.000Z",
       boundingBox: [180, 120, 250, 190],
       visualCropUrl: "s3://datum-zero-dev/org/x/visual_crop.bin",

@@ -27,7 +27,7 @@ function row(overrides: Partial<ProvenanceRow["anomaly"]> = {}): ProvenanceRow {
       analyticsCropUrl: "s3://datum-zero-dev/a",
       spatialBindingStatus: "BOUND",
       status: "APPROVED_DISPATCHED",
-      reviewedById: "stub-qa-reviewer",
+      reviewedById: "00000000-0000-0000-0000-0000000000a1",
       reviewedAt: new Date("2026-07-06T03:00:00.000Z"),
       createdAt: new Date("2026-07-06T02:00:00.000Z"),
       asset: { internalLabel: "APEX_SOLAR-GRID_04-ROW_02-STR_03", latitude: 32.22278, longitude: -110.97437 },
@@ -70,7 +70,7 @@ describe("audit provenance chain (M0-11, CR-12)", () => {
     expect(p.ruleHit?.standardRef).toBe("IEC TS 62446-3");
     expect(p.ruleHit?.classification).toBe("IEC TS 62446-3 Cat 2 — thermal abnormality");
     // reviewer
-    expect(p.review.reviewedById).toBe("stub-qa-reviewer");
+    expect(p.review.reviewedById).toBe("00000000-0000-0000-0000-0000000000a1");
     expect(p.review.reviewedAt).toBe("2026-07-06T03:00:00.000Z");
     // all timestamps
     expect(p.timestamps.capturedAt).toBe("2026-07-05T18:00:00.000Z");

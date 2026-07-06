@@ -36,6 +36,9 @@ const EXPECT_ASSET = "00000000-0000-0001-0002-000000000003"; // APEX_SOLAR-GRID_
 const EXPECT_LABEL = "APEX_SOLAR-GRID_04-ROW_02-STR_03";
 const VERIFIED_SERIAL = "DZ-THERMAL-0001";
 
+// Seeded concierge reviewer (M1-01) — the authenticated identity that stamps the QA approval.
+const REVIEWER = "00000000-0000-0000-0000-0000000000a1";
+
 // e2e-transient rows.
 const SESSION = "00000000-0000-0000-00e2-000000000001";
 const MEDIA = "00000000-0000-0000-00e2-000000000002";
@@ -155,10 +158,10 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
     expect(anomaly.status).toBe(QueueStatus.PENDING_QA);
 
     // 5) QA APPROVE (M0-08, CR-12) — 100% human gate; approval fans out via the guarded outbox
-    await approveAnomaly(anomaly.id, ORG, "stub-qa-reviewer");
+    await approveAnomaly(anomaly.id, ORG, REVIEWER);
     const approved = await prisma.anomaly.findUniqueOrThrow({ where: { id: anomaly.id }, select: { status: true, reviewedById: true, reviewedAt: true } });
     expect(approved.status).toBe(QueueStatus.APPROVED_DISPATCHED);
-    expect(approved.reviewedById).toBe("stub-qa-reviewer");
+    expect(approved.reviewedById).toBe(REVIEWER);
     expect(approved.reviewedAt).toBeTruthy();
 
     // 6) DISPATCH FAN-OUT (M0-09 webhook + M0-10 Jira) — both mocked, delivered via BullMQ
@@ -203,7 +206,7 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
       expect(chain.asset?.internalLabel).toBe(EXPECT_LABEL);
       expect(chain.ruleHit?.standardRef).toBe("IEC TS 62446-3");
       expect(chain.ruleHit?.classification).toContain("IEC TS 62446-3");
-      expect(chain.review.reviewedById).toBe("stub-qa-reviewer");
+      expect(chain.review.reviewedById).toBe(REVIEWER);
       expect(chain.review.reviewedAt).toBeTruthy();
       expect(chain.timestamps.capturedAt).toBeTruthy();
       expect(chain.timestamps.detectedAt).toBeTruthy();

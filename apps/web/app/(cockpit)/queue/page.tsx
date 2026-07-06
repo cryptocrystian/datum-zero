@@ -6,8 +6,7 @@ import { ReviewQueue } from "./ReviewQueue";
 export const dynamic = "force-dynamic";
 
 export default async function QueuePage() {
-  const orgId = getCurrentOrgId();
-  const reviewer = getCurrentReviewer();
+  const [orgId, reviewer] = await Promise.all([getCurrentOrgId(), getCurrentReviewer()]);
   const [items, assets, integrations] = await Promise.all([
     listReviewQueue(orgId),
     listOrgAssets(orgId),

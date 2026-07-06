@@ -20,6 +20,7 @@ import {
   DeliveryTargetType,
   OnboardingState,
   PilotTier,
+  UserRole,
 } from "../src/index";
 
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
@@ -30,6 +31,12 @@ const JIRA_ID = "00000000-0000-0000-0000-000000000005";
 const PILOT_ID = "00000000-0000-0000-0000-000000000006";
 const HW_VERIFIED_ID = "00000000-0000-0000-0000-000000000007";
 const HW_UNVERIFIED_ID = "00000000-0000-0000-0000-000000000008";
+
+// Concierge-provisioned cockpit users (M1-01, CR-20). No self-serve signup (CR-14).
+const ADMIN_USER_ID = "00000000-0000-0000-0000-0000000000a0";
+const REVIEWER_USER_ID = "00000000-0000-0000-0000-0000000000a1";
+export const CONCIERGE_ADMIN_EMAIL = "admin@lighthouse-solar.example";
+export const CONCIERGE_REVIEWER_EMAIL = "reviewer@lighthouse-solar.example";
 
 // Airframe serials matched at ingestion against the verified registry (CR-11).
 export const VERIFIED_AIRFRAME_SERIAL = "DZ-THERMAL-0001";
@@ -184,9 +191,22 @@ async function main() {
     },
   });
 
+  // --- Concierge cockpit users (M1-01, CR-20): magic-link auth, org-scoped + role ---
+  await prisma.user.upsert({
+    where: { id: ADMIN_USER_ID },
+    update: { organizationId: org.id, role: UserRole.ADMIN, email: CONCIERGE_ADMIN_EMAIL },
+    create: { id: ADMIN_USER_ID, organizationId: org.id, role: UserRole.ADMIN, email: CONCIERGE_ADMIN_EMAIL, name: "Concierge Admin" },
+  });
+  await prisma.user.upsert({
+    where: { id: REVIEWER_USER_ID },
+    update: { organizationId: org.id, role: UserRole.REVIEWER, email: CONCIERGE_REVIEWER_EMAIL },
+    create: { id: REVIEWER_USER_ID, organizationId: org.id, role: UserRole.REVIEWER, email: CONCIERGE_REVIEWER_EMAIL, name: "QA Reviewer" },
+  });
+
   console.log(
     `[seed] concierge tenant ready: org=${org.id} · ${assetCount} assets · 1 ruleset · 2 integrations · ` +
-      `1 pilot · airframes(verified=${VERIFIED_AIRFRAME_SERIAL}, unverified=${UNVERIFIED_AIRFRAME_SERIAL})`,
+      `1 pilot · airframes(verified=${VERIFIED_AIRFRAME_SERIAL}, unverified=${UNVERIFIED_AIRFRAME_SERIAL}) · ` +
+      `users(${CONCIERGE_ADMIN_EMAIL}, ${CONCIERGE_REVIEWER_EMAIL})`,
   );
 }
 
