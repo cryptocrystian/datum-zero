@@ -105,6 +105,20 @@ export async function listOrgAssets(organizationId: string): Promise<AssetDTO[]>
   return rows.map((a) => ({ id: a.id, internalLabel: a.internalLabel, latitude: num(a.latitude), longitude: num(a.longitude) }));
 }
 
+/** Distinct physical sites (SITE_ID, the internalLabel prefix — CR-17) for the command-bar selector. */
+export async function listOrgSites(organizationId: string): Promise<string[]> {
+  const rows = await prisma.asset.findMany({
+    where: { organizationId },
+    select: { internalLabel: true },
+  });
+  const sites = new Set<string>();
+  for (const r of rows) {
+    const siteId = r.internalLabel.split("-")[0];
+    if (siteId) sites.add(siteId);
+  }
+  return [...sites].sort();
+}
+
 export async function listOrgIntegrations(organizationId: string): Promise<IntegrationDTO[]> {
   const rows = await prisma.integration.findMany({
     where: { organizationId, isActive: true },

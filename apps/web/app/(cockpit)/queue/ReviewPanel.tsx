@@ -6,6 +6,7 @@ import * as Select from "@radix-ui/react-select";
 import type { AssetDTO, IntegrationDTO, QueueItemDTO } from "@/lib/qa/review";
 import { approveAction, rejectAction, bindAction, type ActionResult } from "./actions";
 import { CoordinateInset } from "./CoordinateInset";
+import { PayloadPreview } from "./PayloadPreview";
 
 const FRAME_W = 640;
 const FRAME_H = 512;
@@ -186,6 +187,8 @@ export function ReviewPanel({
             {item.recommendation ?? "Awaiting classification — bind this detection to an asset to evaluate."}
           </p>
         </div>
+
+        <PayloadPreview item={item} />
 
         {unbound ? (
           <div>

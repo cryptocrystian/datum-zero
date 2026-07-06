@@ -33,3 +33,29 @@ body {
     linear-gradient(90deg, rgba(109, 114, 120, 0.12) 1px, transparent 1px);
   background-size: 16px 16px;
 }
+
+/* Global canvas texture — the content stage. Fainter + coarser than the tactical insets so it
+   reads as engineering paper under the cards, never as noise. */
+.canvas-grid {
+  background-image:
+    linear-gradient(rgba(109, 114, 120, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(109, 114, 120, 0.05) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+/* Node-activity indicator — a live-ingestion equalizer. Success-green, emphasis-restrained. */
+@keyframes dz-node-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+.node-bar {
+  transform-origin: bottom;
+  animation: dz-node-pulse 1.15s ease-in-out infinite;
+}
