@@ -19,6 +19,10 @@ jobs:
 
   schema:
     runs-on: ubuntu-latest
+    env:
+      # Placeholders so `prisma validate` can resolve the datasource env() refs (no DB connection).
+      DATABASE_URL: postgresql://datumzero_app:dz_app_local_dev@localhost:5432/datum_zero
+      DIRECT_DATABASE_URL: postgresql://dz:dz_local_dev@localhost:5432/datum_zero
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,6 +38,10 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    env:
+      # Placeholders so `prisma generate` can resolve the datasource env() refs (no DB connection).
+      DATABASE_URL: postgresql://datumzero_app:dz_app_local_dev@localhost:5432/datum_zero
+      DIRECT_DATABASE_URL: postgresql://dz:dz_local_dev@localhost:5432/datum_zero
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -93,7 +101,9 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 15
     env:
-      DATABASE_URL: postgresql://dz:dz_local_dev@localhost:5432/datum_zero
+      # Runtime (app + worker + e2e) connects as the RLS-subject app role; migrations/seed use dz.
+      DATABASE_URL: postgresql://datumzero_app:dz_app_local_dev@localhost:5432/datum_zero
+      DIRECT_DATABASE_URL: postgresql://dz:dz_local_dev@localhost:5432/datum_zero
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
@@ -105,6 +115,7 @@ jobs:
       - name: Install workspace (frozen lockfile)
         run: pnpm install --frozen-lockfile
       - name: Prisma migrate deploy + generate
+        # migrate deploy runs as dz via directUrl and CREATES datumzero_app + RLS; generate builds the client.
         run: |
           pnpm --filter @dz/db exec prisma migrate deploy
           pnpm --filter @dz/db exec prisma generate

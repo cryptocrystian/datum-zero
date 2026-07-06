@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { runWithOrg } from "@dz/db";
 import { getSession } from "@/lib/session";
 import { getProvenance } from "@/lib/audit/provenance";
 
@@ -17,7 +18,9 @@ export async function GET(
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { dispatchId } = await params;
-  const chain = await getProvenance(dispatchId, session.organizationId);
+  const chain = await runWithOrg(session.organizationId, async () =>
+    getProvenance(dispatchId, session.organizationId),
+  );
   if (!chain) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json(chain);
 }

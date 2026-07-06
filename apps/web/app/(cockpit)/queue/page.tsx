@@ -1,3 +1,4 @@
+import { runWithOrg } from "@dz/db";
 import { requireSession } from "@/lib/session";
 import { listReviewQueue, listOrgAssets, listOrgIntegrations } from "@/lib/qa/review";
 import { ReviewQueue } from "./ReviewQueue";
@@ -10,11 +11,9 @@ export default async function QueuePage() {
   const session = await requireSession();
   const orgId = session.organizationId;
   const reviewer = { id: session.userId, name: session.name ?? session.email ?? session.userId };
-  const [items, assets, integrations] = await Promise.all([
-    listReviewQueue(orgId),
-    listOrgAssets(orgId),
-    listOrgIntegrations(orgId),
-  ]);
+  const [items, assets, integrations] = await runWithOrg(orgId, async () =>
+    Promise.all([listReviewQueue(orgId), listOrgAssets(orgId), listOrgIntegrations(orgId)]),
+  );
 
   return (
     <div className="flex flex-col gap-6">

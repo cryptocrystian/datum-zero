@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { prisma, CaptureModality } from "@dz/db";
+import { prisma, runWithOrg, CaptureModality } from "@dz/db";
 import { storage } from "@dz/storage";
 import { bindAirframe } from "@/lib/ingestion/airframe-binding";
 
@@ -60,65 +60,68 @@ export async function POST(req: NextRequest) {
   const capturedAt = capturedAtRaw ? new Date(capturedAtRaw) : new Date();
   if (Number.isNaN(capturedAt.getTime())) return badRequest("capturedAt is not a valid date");
 
-  // Tenant guard: the organization must exist (multi-tenant native).
-  const org = await prisma.organization.findUnique({
-    where: { id: organizationId },
-    select: { id: true },
-  });
-  if (!org) return NextResponse.json({ error: "unknown_organization" }, { status: 404 });
+  // Bind the RLS org context for the airframe lookup + tenant writes below (M1-02, CR-20).
+  return runWithOrg(organizationId, async () => {
+    // Tenant guard: the organization must exist (multi-tenant native).
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { id: true },
+    });
+    if (!org) return NextResponse.json({ error: "unknown_organization" }, { status: 404 });
 
-  // --- CR-11 FAIL CLOSED: bind to a verified airframe BEFORE persisting anything ---
-  const binding = await bindAirframe({ organizationId, airframeSerial });
-  if (!binding.ok) {
-    return NextResponse.json(
-      { error: "airframe_unverified", reason: binding.reason, message: binding.message },
-      { status: 422 },
-    );
-  }
+    // --- CR-11 FAIL CLOSED: bind to a verified airframe BEFORE persisting anything ---
+    const binding = await bindAirframe({ organizationId, airframeSerial });
+    if (!binding.ok) {
+      return NextResponse.json(
+        { error: "airframe_unverified", reason: binding.reason, message: binding.message },
+        { status: 422 },
+      );
+    }
 
-  // --- write bytes through the StoragePort seam (S3/MinIO default, local fallback) ---
-  const store = storage();
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const sessionId = globalThis.crypto.randomUUID();
-  const safeName = (file.name || "capture.bin").replace(/[^A-Za-z0-9._-]/g, "_");
-  const key = `org/${organizationId}/ingest/${sessionId}/${safeName}`;
-  const stored = await store.put({
-    key,
-    body: bytes,
-    contentType: file.type || "application/octet-stream",
-    metadata: { organizationId, modality, airframeSerial },
-  });
+    // --- write bytes through the StoragePort seam (S3/MinIO default, local fallback) ---
+    const store = storage();
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const sessionId = globalThis.crypto.randomUUID();
+    const safeName = (file.name || "capture.bin").replace(/[^A-Za-z0-9._-]/g, "_");
+    const key = `org/${organizationId}/ingest/${sessionId}/${safeName}`;
+    const stored = await store.put({
+      key,
+      body: bytes,
+      contentType: file.type || "application/octet-stream",
+      metadata: { organizationId, modality, airframeSerial },
+    });
 
-  // --- persist session + media (only reached when the airframe is verified) ---
-  const session = await prisma.ingestionSession.create({
-    data: {
-      id: sessionId,
-      organizationId,
-      modality: modality as CaptureModality,
-      pilotOrNodeId: binding.pilotId,
-      rawStoragePath: stored.storagePath,
-      boundHardwareId: binding.hardwareId,
-      // Mirrors the verified airframe — never hardcoded; only verified captures reach here (CR-11).
-      isNdaaVerified: binding.isNdaaVerified,
-      mediaAssets: {
-        create: {
-          fullStoragePath: stored.storagePath,
-          capturedAt,
+    // --- persist session + media (only reached when the airframe is verified) ---
+    const session = await prisma.ingestionSession.create({
+      data: {
+        id: sessionId,
+        organizationId,
+        modality: modality as CaptureModality,
+        pilotOrNodeId: binding.pilotId,
+        rawStoragePath: stored.storagePath,
+        boundHardwareId: binding.hardwareId,
+        // Mirrors the verified airframe — never hardcoded; only verified captures reach here (CR-11).
+        isNdaaVerified: binding.isNdaaVerified,
+        mediaAssets: {
+          create: {
+            fullStoragePath: stored.storagePath,
+            capturedAt,
+          },
         },
       },
-    },
-    include: { mediaAssets: { select: { id: true } } },
-  });
+      include: { mediaAssets: { select: { id: true } } },
+    });
 
-  return NextResponse.json(
-    {
-      ingestionSessionId: session.id,
-      mediaAssetId: session.mediaAssets[0]?.id ?? null,
-      isNdaaVerified: session.isNdaaVerified,
-      boundHardwareId: session.boundHardwareId,
-      approvedListRef: binding.approvedListRef,
-      storage: { driver: store.driver, path: stored.storagePath, bytes: stored.size },
-    },
-    { status: 201 },
-  );
+    return NextResponse.json(
+      {
+        ingestionSessionId: session.id,
+        mediaAssetId: session.mediaAssets[0]?.id ?? null,
+        isNdaaVerified: session.isNdaaVerified,
+        boundHardwareId: session.boundHardwareId,
+        approvedListRef: binding.approvedListRef,
+        storage: { driver: store.driver, path: stored.storagePath, bytes: stored.size },
+      },
+      { status: 201 },
+    );
+  });
 }

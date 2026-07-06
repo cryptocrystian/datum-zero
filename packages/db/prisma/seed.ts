@@ -15,13 +15,20 @@
  *       - UNVERIFIED serial → registered but not NDAA-verified; fails closed
  */
 import {
-  prisma,
+  PrismaClient,
   CaptureModality,
   DeliveryTargetType,
   OnboardingState,
   PilotTier,
   UserRole,
 } from "../src/index";
+
+// Seed runs as the superuser dz (BYPASSRLS) via directUrl — it writes every tenant table without a
+// per-org GUC (M1-02, CR-20). A dedicated client (not the RLS-scoped runtime `prisma`) keeps the
+// bypass explicit. Falls back to DATABASE_URL only if DIRECT_DATABASE_URL is unset.
+const prisma = new PrismaClient({
+  datasourceUrl: process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL,
+});
 
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
 const CONTRACT_ID = "00000000-0000-0000-0000-000000000002";

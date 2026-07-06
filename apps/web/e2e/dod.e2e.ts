@@ -17,7 +17,7 @@ process.env.JIRA_EMAIL = "e2e@datumzero.example";
 process.env.JIRA_API_TOKEN = "e2e-token";
 
 import { NextRequest } from "next/server";
-import { prisma, SpatialBindingStatus, QueueStatus } from "@dz/db";
+import { prisma, runWithOrg, SpatialBindingStatus, QueueStatus } from "@dz/db";
 import { validateWorkOrder } from "@dz/adapters";
 import { POST as inferenceCallback } from "@/app/api/v1/inference/callback/route";
 import { approveAnomaly } from "@/lib/qa/review";
@@ -66,10 +66,13 @@ const adfText = (d: any): string => {
   try { return (d.content ?? []).map((p: any) => (p.content ?? []).map((t: any) => t.text ?? "").join("")).join("\n"); } catch { return ""; }
 };
 async function cleanupRows() {
-  await prisma.workOrderDispatch.deleteMany({ where: { anomaly: { mediaAssetId: MEDIA } } });
-  await prisma.anomaly.deleteMany({ where: { mediaAssetId: MEDIA } });
-  await prisma.mediaAsset.deleteMany({ where: { id: MEDIA } });
-  await prisma.ingestionSession.deleteMany({ where: { id: SESSION } });
+  // RLS-scoped: transient e2e rows belong to ORG (M1-02).
+  await runWithOrg(ORG, async () => {
+    await prisma.workOrderDispatch.deleteMany({ where: { anomaly: { mediaAssetId: MEDIA } } });
+    await prisma.anomaly.deleteMany({ where: { mediaAssetId: MEDIA } });
+    await prisma.mediaAsset.deleteMany({ where: { id: MEDIA } });
+    await prisma.ingestionSession.deleteMany({ where: { id: SESSION } });
+  });
 }
 
 beforeAll(async () => {
@@ -92,9 +95,11 @@ beforeAll(async () => {
   const jiraPort = (jiraSrv.address() as AddressInfo).port;
   process.env.JIRA_BASE_URL = `http://localhost:${jiraPort}`;
 
-  const integ = await prisma.integration.findUnique({ where: { id: WEBHOOK_INTEGRATION }, select: { config: true } });
-  originalWebhookConfig = integ?.config ?? {};
-  await prisma.integration.update({ where: { id: WEBHOOK_INTEGRATION }, data: { config: { url: `http://localhost:${webhookPort}/webhook` } } });
+  await runWithOrg(ORG, async () => {
+    const integ = await prisma.integration.findUnique({ where: { id: WEBHOOK_INTEGRATION }, select: { config: true } });
+    originalWebhookConfig = integ?.config ?? {};
+    await prisma.integration.update({ where: { id: WEBHOOK_INTEGRATION }, data: { config: { url: `http://localhost:${webhookPort}/webhook` } } });
+  });
 
   await cleanupRows();
   worker = startWorker();
@@ -104,14 +109,19 @@ afterAll(async () => {
   if (worker) await worker.close();
   await getDispatchQueue().obliterate({ force: true }).catch(() => {});
   await cleanupRows();
-  await prisma.integration.update({ where: { id: WEBHOOK_INTEGRATION }, data: { config: (originalWebhookConfig ?? {}) as object } }).catch(() => {});
+  // Bulletproof ALS: await INSIDE the run callback so the GUC is set at query-execution time.
+  await runWithOrg(ORG, async () => {
+    await prisma.integration.update({ where: { id: WEBHOOK_INTEGRATION }, data: { config: (originalWebhookConfig ?? {}) as object } });
+  }).catch(() => {});
   if (webhookSrv) await new Promise<void>((r) => webhookSrv.close(() => r()));
   if (jiraSrv) await new Promise<void>((r) => jiraSrv.close(() => r()));
   await prisma.$disconnect();
 });
 
 describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
-  it("runs seed → ingest → inference → bind → classify → approve → fan-out dispatch → audit", async () => {
+  it("runs seed → ingest → inference → bind → classify → approve → fan-out dispatch → audit", () =>
+    // RLS org context for all direct-Prisma steps; the callback + worker set their own (M1-02).
+    runWithOrg(ORG, async () => {
     // 1) INGEST — capture-time airframe binding (M0-04, CR-11). Fail closed on unverified.
     const { bindAirframe } = await import("@/lib/ingestion/airframe-binding");
     const airframe = await bindAirframe({ organizationId: ORG, airframeSerial: VERIFIED_SERIAL });
@@ -218,5 +228,5 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
     // org-scoped: another org cannot read this dispatch's provenance
     const crossOrg = await getProvenance(dispatches[0].id, "00000000-0000-0000-0000-0000000000ff");
     expect(crossOrg).toBeNull();
-  });
+    }));
 });

@@ -133,7 +133,7 @@ export async function dispatchAnomaly(
       },
     });
 
-    await enqueueDispatch(dispatchId);
+    await enqueueDispatch(dispatchId, organizationId);
     dispatched += 1;
   }
 

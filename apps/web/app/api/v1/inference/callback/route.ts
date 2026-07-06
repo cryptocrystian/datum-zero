@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { prisma, SpatialBindingStatus } from "@dz/db";
+import { prisma, runWithOrg, SpatialBindingStatus } from "@dz/db";
 import { bindUnboundAnomalies } from "@/lib/binding/spatial-binding";
 import { classifyBoundAnomalies } from "@/lib/rules/classify";
 
@@ -73,75 +73,78 @@ export async function POST(req: NextRequest) {
     return badRequest("detection crop URLs are required");
   }
 
-  // Tenant guard: the session must exist AND belong to the claimed org (multi-tenant native).
-  const session = await prisma.ingestionSession.findFirst({
-    where: { id: ingestionSessionId, organizationId },
-    select: { id: true },
-  });
-  if (!session) return NextResponse.json({ error: "unknown_session" }, { status: 404 });
-
-  // Reuse the MediaAsset created at ingestion (M0-04); create one only if inference ran first.
-  let mediaAsset = await prisma.mediaAsset.findFirst({
-    where: { ingestionSessionId },
-    select: { id: true },
-  });
-  if (!mediaAsset) {
-    const fullStoragePath = String(media.full_storage_path ?? "").trim();
-    const capturedAt = media.captured_at ? new Date(media.captured_at) : new Date();
-    if (!fullStoragePath) return badRequest("media_asset.full_storage_path is required to create a MediaAsset");
-    if (Number.isNaN(capturedAt.getTime())) return badRequest("media_asset.captured_at is not a valid date");
-    mediaAsset = await prisma.mediaAsset.create({
-      data: { ingestionSessionId, fullStoragePath, capturedAt },
+  // Bind the RLS org context for every tenant read/write below — defense-in-depth (M1-02, CR-20).
+  return runWithOrg(organizationId, async () => {
+    // Tenant guard: the session must exist AND belong to the claimed org (multi-tenant native).
+    const session = await prisma.ingestionSession.findFirst({
+      where: { id: ingestionSessionId, organizationId },
       select: { id: true },
     });
-  }
+    if (!session) return NextResponse.json({ error: "unknown_session" }, { status: 404 });
 
-  const boundingBox = d.bounding_box.map((n: unknown) => Math.trunc(Number(n)));
-  const anomalyId = deterministicUuid(`${ingestionSessionId}:${boundingBox.join(",")}`);
+    // Reuse the MediaAsset created at ingestion (M0-04); create one only if inference ran first.
+    let mediaAsset = await prisma.mediaAsset.findFirst({
+      where: { ingestionSessionId },
+      select: { id: true },
+    });
+    if (!mediaAsset) {
+      const fullStoragePath = String(media.full_storage_path ?? "").trim();
+      const capturedAt = media.captured_at ? new Date(media.captured_at) : new Date();
+      if (!fullStoragePath) return badRequest("media_asset.full_storage_path is required to create a MediaAsset");
+      if (Number.isNaN(capturedAt.getTime())) return badRequest("media_asset.captured_at is not a valid date");
+      mediaAsset = await prisma.mediaAsset.create({
+        data: { ingestionSessionId, fullStoragePath, capturedAt },
+        select: { id: true },
+      });
+    }
 
-  // Evidence layer ONLY — the adjudication layer (classification/recommendation/ruleSet) is M0-07.
-  const evidence = {
-    organizationId,
-    mediaAssetId: mediaAsset.id,
-    boundingBox,
-    latitude: d.latitude ?? null,
-    longitude: d.longitude ?? null,
-    zAxisOffset: typeof d.z_axis_offset === "number" ? d.z_axis_offset : null,
-    confidenceScore: d.confidence_score,
-    metricDelta: d.metric_delta,
-    metricUnit: d.metric_unit ?? null,
-    visualCropUrl: String(d.visual_crop_url),
-    analyticsCropUrl: String(d.analytics_crop_url),
-    modelVersion,
-    // CR-16: created unbound; M0-06 resolves assetId and flips this to BOUND.
-    spatialBindingStatus: SpatialBindingStatus.UNBOUND_REVIEW,
-    // status left at its PENDING_QA default; nothing dispatches while unbound (fail closed).
-  };
+    const boundingBox = d.bounding_box.map((n: unknown) => Math.trunc(Number(n)));
+    const anomalyId = deterministicUuid(`${ingestionSessionId}:${boundingBox.join(",")}`);
 
-  const anomaly = await prisma.anomaly.upsert({
-    where: { id: anomalyId },
-    update: evidence,
-    create: { id: anomalyId, ...evidence },
-    select: { id: true },
+    // Evidence layer ONLY — the adjudication layer (classification/recommendation/ruleSet) is M0-07.
+    const evidence = {
+      organizationId,
+      mediaAssetId: mediaAsset.id,
+      boundingBox,
+      latitude: d.latitude ?? null,
+      longitude: d.longitude ?? null,
+      zAxisOffset: typeof d.z_axis_offset === "number" ? d.z_axis_offset : null,
+      confidenceScore: d.confidence_score,
+      metricDelta: d.metric_delta,
+      metricUnit: d.metric_unit ?? null,
+      visualCropUrl: String(d.visual_crop_url),
+      analyticsCropUrl: String(d.analytics_crop_url),
+      modelVersion,
+      // CR-16: created unbound; M0-06 resolves assetId and flips this to BOUND.
+      spatialBindingStatus: SpatialBindingStatus.UNBOUND_REVIEW,
+      // status left at its PENDING_QA default; nothing dispatches while unbound (fail closed).
+    };
+
+    const anomaly = await prisma.anomaly.upsert({
+      where: { id: anomalyId },
+      update: evidence,
+      create: { id: anomalyId, ...evidence },
+      select: { id: true },
+    });
+
+    // Post-detection pipeline (distinct stages, each in its own lib): bind (M0-06) then classify
+    // newly BOUND anomalies (M0-07). status stays PENDING_QA; unbound anomalies are never classified.
+    await bindUnboundAnomalies(organizationId);
+    await classifyBoundAnomalies(organizationId);
+
+    const final = await prisma.anomaly.findFirst({
+      where: { id: anomaly.id, organizationId },
+      select: { id: true, spatialBindingStatus: true, status: true, modelVersion: true },
+    });
+
+    return NextResponse.json(
+      {
+        anomalyId: final?.id,
+        spatialBindingStatus: final?.spatialBindingStatus,
+        status: final?.status,
+        modelVersion: final?.modelVersion,
+      },
+      { status: 201 },
+    );
   });
-
-  // Post-detection pipeline (distinct stages, each in its own lib): bind (M0-06) then classify
-  // newly BOUND anomalies (M0-07). status stays PENDING_QA; unbound anomalies are never classified.
-  await bindUnboundAnomalies(organizationId);
-  await classifyBoundAnomalies(organizationId);
-
-  const final = await prisma.anomaly.findFirst({
-    where: { id: anomaly.id, organizationId },
-    select: { id: true, spatialBindingStatus: true, status: true, modelVersion: true },
-  });
-
-  return NextResponse.json(
-    {
-      anomalyId: final?.id,
-      spatialBindingStatus: final?.spatialBindingStatus,
-      status: final?.status,
-      modelVersion: final?.modelVersion,
-    },
-    { status: 201 },
-  );
 }

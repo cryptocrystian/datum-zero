@@ -9,8 +9,11 @@
 // ============================================================================
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Runtime (app + worker) connects as the least-privilege, non-superuser role datumzero_app,
+  // which is SUBJECT to RLS. Migrations/seed use directUrl as the superuser dz (BYPASSRLS). (M1-02, CR-20)
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 generator client {

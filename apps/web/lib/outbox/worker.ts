@@ -1,5 +1,5 @@
 import { Worker, DelayedError, UnrecoverableError, type Job } from "bullmq";
-import { prisma } from "@dz/db";
+import { prisma, runWithOrg } from "@dz/db";
 import { getAdapter, validateWorkOrder } from "@dz/adapters";
 import { DISPATCH_QUEUE, getRedis, bullConnection } from "./redis";
 
@@ -20,8 +20,12 @@ async function orgRateLimitWaitMs(organizationId: string): Promise<number> {
 }
 
 async function processJob(job: Job, token?: string): Promise<void> {
-  const { dispatchId } = job.data as { dispatchId: string };
+  const { dispatchId, organizationId } = job.data as { dispatchId: string; organizationId: string };
+  // Bind the RLS org context for the whole job — the dispatch row is invisible without it (M1-02).
+  return runWithOrg(organizationId, () => deliver(job, token, dispatchId));
+}
 
+async function deliver(job: Job, token: string | undefined, dispatchId: string): Promise<void> {
   const dispatch = await prisma.workOrderDispatch.findUnique({
     where: { id: dispatchId },
     select: {
