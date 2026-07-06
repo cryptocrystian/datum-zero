@@ -1,15 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentOrgId, getCurrentReviewer } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 import { approveAnomaly, rejectAnomaly, bindAnomalyToAsset } from "@/lib/qa/review";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
+/**
+ * DAL rule (M1-01/0a, CR-20): every mutation independently validates the session against the DB
+ * (requireSession → auth() → DB) and derives org + reviewer from it — NEVER trusting the middleware
+ * cookie gate or that the page layout rendered. Org scope + reviewer identity come only from here.
+ */
 export async function approveAction(anomalyId: string): Promise<ActionResult> {
   try {
-    const [orgId, reviewer] = await Promise.all([getCurrentOrgId(), getCurrentReviewer()]);
-    await approveAnomaly(anomalyId, orgId, reviewer.id);
+    const session = await requireSession();
+    await approveAnomaly(anomalyId, session.organizationId, session.userId);
     revalidatePath("/queue");
     return { ok: true };
   } catch (e) {
@@ -19,8 +24,8 @@ export async function approveAction(anomalyId: string): Promise<ActionResult> {
 
 export async function rejectAction(anomalyId: string): Promise<ActionResult> {
   try {
-    const [orgId, reviewer] = await Promise.all([getCurrentOrgId(), getCurrentReviewer()]);
-    await rejectAnomaly(anomalyId, orgId, reviewer.id);
+    const session = await requireSession();
+    await rejectAnomaly(anomalyId, session.organizationId, session.userId);
     revalidatePath("/queue");
     return { ok: true };
   } catch (e) {
@@ -30,7 +35,8 @@ export async function rejectAction(anomalyId: string): Promise<ActionResult> {
 
 export async function bindAction(anomalyId: string, assetId: string): Promise<ActionResult> {
   try {
-    await bindAnomalyToAsset(anomalyId, await getCurrentOrgId(), assetId);
+    const session = await requireSession();
+    await bindAnomalyToAsset(anomalyId, session.organizationId, assetId);
     revalidatePath("/queue");
     return { ok: true };
   } catch (e) {

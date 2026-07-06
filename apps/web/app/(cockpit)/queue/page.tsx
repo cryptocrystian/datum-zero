@@ -1,4 +1,4 @@
-import { getCurrentOrgId, getCurrentReviewer } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 import { listReviewQueue, listOrgAssets, listOrgIntegrations } from "@/lib/qa/review";
 import { ReviewQueue } from "./ReviewQueue";
 
@@ -6,7 +6,10 @@ import { ReviewQueue } from "./ReviewQueue";
 export const dynamic = "force-dynamic";
 
 export default async function QueuePage() {
-  const [orgId, reviewer] = await Promise.all([getCurrentOrgId(), getCurrentReviewer()]);
+  // Validate the session at the DAL, independent of the layout (M1-01/0a, CR-20).
+  const session = await requireSession();
+  const orgId = session.organizationId;
+  const reviewer = { id: session.userId, name: session.name ?? session.email ?? session.userId };
   const [items, assets, integrations] = await Promise.all([
     listReviewQueue(orgId),
     listOrgAssets(orgId),
