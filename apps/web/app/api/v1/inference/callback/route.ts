@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { prisma, SpatialBindingStatus } from "@dz/db";
+import { bindUnboundAnomalies } from "@/lib/binding/spatial-binding";
+import { classifyBoundAnomalies } from "@/lib/rules/classify";
 
 // Needs Node APIs (crypto, Prisma) — not the edge runtime.
 export const runtime = "nodejs";
@@ -28,11 +30,14 @@ function deterministicUuid(seed: string): string {
 }
 
 /**
- * M0-05 — inference callback (CR-12, CR-16).
+ * M0-05/06/07 — inference callback + post-detection pipeline (CR-12, CR-15, CR-16).
  *
- * Persists the detector's EVIDENCE as an Anomaly: measurements + crops + modelVersion only. It is
- * created UNBOUND (assetId null, spatialBindingStatus = UNBOUND_REVIEW) — spatial binding is M0-06,
- * and an unbound anomaly can never dispatch. NO classification/recommendation here — that is M0-07.
+ * The callback itself persists the detector's EVIDENCE as an Anomaly — measurements + crops +
+ * modelVersion only, created UNBOUND (assetId null, spatialBindingStatus = UNBOUND_REVIEW). It then
+ * runs the pipeline as distinct stages via their libraries: spatial binding (M0-06) resolves the
+ * assetId, then tolerance-eval (M0-07) sets the measurement + evidence-framed recommendation on
+ * newly BOUND anomalies. The callback never writes the adjudication layer inline — the rules lib
+ * does. `status` stays PENDING_QA throughout; an unbound anomaly is never classified or dispatched.
  * Org-scoped and idempotent.
  */
 export async function POST(req: NextRequest) {
@@ -117,15 +122,25 @@ export async function POST(req: NextRequest) {
     where: { id: anomalyId },
     update: evidence,
     create: { id: anomalyId, ...evidence },
-    select: { id: true, spatialBindingStatus: true, modelVersion: true, status: true },
+    select: { id: true },
+  });
+
+  // Post-detection pipeline (distinct stages, each in its own lib): bind (M0-06) then classify
+  // newly BOUND anomalies (M0-07). status stays PENDING_QA; unbound anomalies are never classified.
+  await bindUnboundAnomalies(organizationId);
+  await classifyBoundAnomalies(organizationId);
+
+  const final = await prisma.anomaly.findFirst({
+    where: { id: anomaly.id, organizationId },
+    select: { id: true, spatialBindingStatus: true, status: true, modelVersion: true },
   });
 
   return NextResponse.json(
     {
-      anomalyId: anomaly.id,
-      spatialBindingStatus: anomaly.spatialBindingStatus,
-      status: anomaly.status,
-      modelVersion: anomaly.modelVersion,
+      anomalyId: final?.id,
+      spatialBindingStatus: final?.spatialBindingStatus,
+      status: final?.status,
+      modelVersion: final?.modelVersion,
     },
     { status: 201 },
   );

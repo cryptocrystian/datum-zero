@@ -50,6 +50,8 @@ jobs:
         run: pnpm --filter @dz/web typecheck
       - name: Lint web
         run: pnpm --filter @dz/web lint
+      - name: Unit tests (vitest)
+        run: pnpm --filter @dz/web test
 
   inference:
     runs-on: ubuntu-latest

@@ -21,6 +21,8 @@ CLIENT_FACING_GLOBS = [
     "packages/adapters/**/*.py",
     "packages/adapters/**/templates/**/*",
     "apps/web/**/adapters/**/*",
+    # The classification/recommendation generator emits client-facing text (M0-07, CR-12).
+    "apps/web/lib/rules/**/*.ts",
 ]
 
 ALLOW_MARK = "guardrail:allow-verdict-term"  # explicit, reviewed escape hatch on a single line
