@@ -7,8 +7,8 @@ import type { DeliveryAdapter, DeliveryResult } from "./types";
 export const genericWebhookAdapter: DeliveryAdapter = {
   targetType: "GENERIC_WEBHOOK",
 
-  async deliver(payload, config, opts): Promise<DeliveryResult> {
-    const url = (config as { url?: string } | null)?.url;
+  async deliver(payload, target, opts): Promise<DeliveryResult> {
+    const url = (target.config as { url?: string } | null)?.url;
     if (!url) {
       // Misconfigured integration — not retryable.
       return { ok: false, status: 0, downstreamRef: null, retryable: false };

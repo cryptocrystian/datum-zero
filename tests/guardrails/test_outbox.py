@@ -54,8 +54,14 @@ def test_recommendation_is_never_null():
     assert "review recommended" in r, "fallback must be evidence-framed"
 
 
-def test_adapter_registry_generic_webhook_only():
+def test_adapter_registry_registers_targets_behind_one_interface():
     reg = REGISTRY.read_text()
-    assert "genericWebhookAdapter" in reg, "generic webhook must be registered"
-    # Jira is M0-10 — its ADAPTER must not be wired yet (a comment referencing it is fine).
-    assert "jiraAdapter" not in reg, "Jira adapter is M0-10, not M0-09"
+    assert "genericWebhookAdapter" in reg, "generic webhook must be registered (M0-09)"
+    assert "nativeJiraAdapter" in reg, "native Jira must be registered (M0-10)"
+
+
+def test_dispatch_fans_out_registry_driven():
+    """One approval fans out to every active integration that has a registered adapter (not hardcoded)."""
+    d = DISPATCH.read_text()
+    assert "getAdapter(" in d, "dispatch must select targets via the registry, not a hardcoded type"
+    assert 'targetType: "GENERIC_WEBHOOK"' not in d, "dispatch must not hardcode a single target type"

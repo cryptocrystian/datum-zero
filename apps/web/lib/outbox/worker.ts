@@ -29,7 +29,7 @@ async function processJob(job: Job, token?: string): Promise<void> {
       organizationId: true,
       payload: true,
       isResolved: true,
-      integration: { select: { targetType: true, config: true } },
+      integration: { select: { targetType: true, config: true, secretVaultKey: true } },
     },
   });
   if (!dispatch) throw new UnrecoverableError(`dispatch not found: ${dispatchId}`);
@@ -48,7 +48,10 @@ async function processJob(job: Job, token?: string): Promise<void> {
   // Validate the stored payload against the JSON Schema before sending (defense-in-depth).
   validateWorkOrder(dispatch.payload);
 
-  const result = await adapter.deliver(dispatch.payload, dispatch.integration.config);
+  const result = await adapter.deliver(dispatch.payload, {
+    config: dispatch.integration.config,
+    secretVaultKey: dispatch.integration.secretVaultKey,
+  });
   const attempts = job.attemptsMade + 1;
 
   if (result.ok) {

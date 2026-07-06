@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { prisma, Prisma } from "@dz/db";
-import { renderWorkOrder, validateWorkOrder, type RenderContext } from "@dz/adapters";
+import { renderWorkOrder, validateWorkOrder, getAdapter, type RenderContext } from "@dz/adapters";
 import { assertApprovedForDispatch, DispatchGateError } from "./gate";
 import { enqueueDispatch } from "./queue";
 
@@ -60,10 +60,13 @@ export async function dispatchAnomaly(
     throw new DispatchGateError("QA gate: approved anomaly is missing asset/reviewer — dispatch refused.");
   }
 
-  const integrations = await prisma.integration.findMany({
-    where: { organizationId, isActive: true, targetType: "GENERIC_WEBHOOK" },
-    select: { id: true },
+  // Fan out to EVERY active integration that has a registered adapter (registry-driven, not
+  // hardcoded) — one approval → one WorkOrderDispatch per target (e.g. GENERIC_WEBHOOK + NATIVE_JIRA).
+  const active = await prisma.integration.findMany({
+    where: { organizationId, isActive: true },
+    select: { id: true, targetType: true },
   });
+  const integrations = active.filter((i) => getAdapter(i.targetType) !== undefined);
 
   const emittedAt = new Date().toISOString();
   let dispatched = 0;

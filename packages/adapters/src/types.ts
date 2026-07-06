@@ -13,11 +13,21 @@ export interface DeliveryResult {
   retryable: boolean;
 }
 
+/**
+ * A delivery destination. `config` is the Integration.config Json (endpoint URL, project key, field
+ * mappings — NEVER secrets). `secretVaultKey` references the secret (AWS Secrets Manager; env-backed
+ * in dev) — credentials are resolved from the vault, never read from the DB (MANIFEST §3).
+ */
+export interface DeliveryTarget {
+  config: unknown;
+  secretVaultKey: string | null;
+}
+
 export interface DeliveryAdapter {
   readonly targetType: string;
   deliver(
     payload: unknown,
-    config: unknown,
+    target: DeliveryTarget,
     opts?: { timeoutMs?: number },
   ): Promise<DeliveryResult>;
 }
