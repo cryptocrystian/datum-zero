@@ -12,6 +12,24 @@ export default async function SignInPage({
   const sp = await searchParams;
   if (await getSession()) redirect("/queue");
 
+  // Dev convenience: no SMTP in dev, so surface the just-issued magic link right on the page.
+  // Prod never reads this (fail closed to "check your email"). Localhost-only, single-use token.
+  let devMagicLink: string | null = null;
+  if (sp.sent && process.env.NODE_ENV !== "production") {
+    try {
+      const [{ readFile }, os, path] = await Promise.all([
+        import("node:fs/promises"),
+        import("node:os"),
+        import("node:path"),
+      ]);
+      const raw = await readFile(path.join(os.tmpdir(), "dz-magic-link.json"), "utf8");
+      const data = JSON.parse(raw) as { url: string; at: number };
+      if (Date.now() - data.at < 10 * 60 * 1000) devMagicLink = data.url;
+    } catch {
+      // no recent link stashed — the server log still has it
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-6">
       <div>
@@ -25,9 +43,21 @@ export default async function SignInPage({
       </div>
 
       {sp.sent ? (
-        <p className="rounded-sm border border-tactical-gold/50 bg-datum-cardbg px-4 py-3 font-mono text-xs text-tactical-gold">
-          Check your email for the sign-in link. (Dev: the link is printed to the server log.)
-        </p>
+        <div className="rounded-sm border border-tactical-gold/50 bg-datum-cardbg px-4 py-3">
+          <p className="font-mono text-xs text-tactical-gold">Check your email for the sign-in link.</p>
+          {devMagicLink ? (
+            <a
+              href={devMagicLink}
+              className="mt-3 block break-all rounded-sm border border-tactical-gold bg-datum-midnight px-3 py-2 text-center font-mono text-[11px] uppercase tracking-wider text-white transition-colors duration-150 hover:bg-tactical-gold hover:text-datum-midnight"
+            >
+              [ Dev · Open Sign-in Link ]
+            </a>
+          ) : (
+            <p className="mt-1 font-mono text-[10px] text-datum-slate">
+              Dev: the link is also printed to the server log.
+            </p>
+          )}
+        </div>
       ) : null}
       {sp.error === "denied" ? (
         <p className="rounded-sm border border-tactical-red px-4 py-3 font-mono text-xs leading-relaxed text-tactical-red">

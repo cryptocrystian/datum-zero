@@ -30,9 +30,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       server: { host: "localhost", port: 587 }, // unused in dev — the link is logged, not emailed
       from: process.env.EMAIL_FROM ?? "no-reply@datumzero.local",
       async sendVerificationRequest({ identifier, url }) {
-        // Dev: no SMTP. Log the magic link so you can sign in. Prod: swap for real delivery.
+        // Dev: no SMTP. Surface the magic link two ways so it's easy to find — a prominent server
+        // log AND a temp file that /signin reads to show a one-click link. Prod: swap for real delivery.
+        const rule = "═".repeat(72);
         // eslint-disable-next-line no-console
-        console.log(`\n🔗 [auth] magic sign-in link for ${identifier}:\n${url}\n`);
+        console.log(`\n${rule}\n🔗 [auth] DEV magic sign-in link for ${identifier}:\n${url}\n${rule}\n`);
+        if (process.env.NODE_ENV !== "production") {
+          try {
+            const [{ writeFile }, os, path] = await Promise.all([
+              import("node:fs/promises"),
+              import("node:os"),
+              import("node:path"),
+            ]);
+            await writeFile(
+              path.join(os.tmpdir(), "dz-magic-link.json"),
+              JSON.stringify({ identifier, url, at: Date.now() }),
+              "utf8",
+            );
+          } catch {
+            // best-effort dev convenience; the server log above is always the fallback
+          }
+        }
       },
     }),
   ],
