@@ -1,27 +1,19 @@
 import NextAuth from "next-auth";
 import Nodemailer from "next-auth/providers/nodemailer";
-import { PrismaAdapter } from "@auth/prisma-adapter";
-import type { Adapter } from "next-auth/adapters";
 import { prisma } from "@dz/db";
+import { conciergeAdapter, enrichSession } from "@/lib/auth-core";
 
 /**
  * M1-01 — real authentication (CR-20). Auth.js v5, email magic-link (no passwords), database
  * sessions in Postgres. Users are CONCIERGE-PROVISIONED (CR-14): no self-serve signup — the adapter
  * refuses to create users, and sign-in is denied for any email not seeded. The session carries
  * { userId, organizationId, role }. Keep this file the ONLY place the provider is configured so it
- * can be swapped later (the app consumes it through lib/session.ts).
+ * can be swapped later (the app consumes it through lib/session.ts). Adapter + session enrichment
+ * live in lib/auth-core.ts so they stay testable across every role (see e2e/auth-roles.e2e.ts).
  */
 
-// Concierge-only adapter: never auto-create a user (@auth/core pinned to one version — no skew).
-const adapter: Adapter = {
-  ...PrismaAdapter(prisma),
-  createUser() {
-    throw new Error("No self-serve signup — users are concierge-provisioned (CR-14).");
-  },
-};
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter,
+  adapter: conciergeAdapter(),
   session: { strategy: "database" },
   trustHost: true,
   pages: { signIn: "/signin", verifyRequest: "/signin?sent=1", error: "/signin?error=1" },
@@ -62,13 +54,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return Boolean(exists);
     },
     // Enrich the session with tenant + role (database strategy passes the DB user).
-    async session({ session, user }) {
-      if (session.user) {
-        session.user.id = user.id;
-        session.user.organizationId = user.organizationId;
-        session.user.role = user.role;
-      }
-      return session;
+    session({ session, user }) {
+      return enrichSession(session, user);
     },
   },
 });

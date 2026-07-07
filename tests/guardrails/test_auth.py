@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WEB = ROOT / "apps/web"
 SESSION = WEB / "lib/session.ts"
 AUTH = WEB / "auth.ts"
+AUTH_CORE = WEB / "lib/auth-core.ts"
 MIDDLEWARE = WEB / "middleware.ts"
 LAYOUT = WEB / "app/(cockpit)/layout.tsx"
 AUDIT_ROUTE = WEB / "app/api/v1/audit/provenance/[dispatchId]/route.ts"
@@ -61,6 +62,9 @@ def test_audit_route_requires_session():
 
 
 def test_no_self_serve_signup():
-    src = AUTH.read_text()
-    assert "createUser" in src and "concierge" in src.lower(), "adapter must refuse self-serve user creation (CR-14)"
-    assert 'strategy: "database"' in src, "sessions must be persisted in Postgres (database strategy)"
+    # The concierge adapter (refuse createUser + resilient deleteSession) lives in lib/auth-core.ts;
+    # auth.ts wires it in via conciergeAdapter().
+    core = AUTH_CORE.read_text()
+    assert "createUser" in core and "concierge" in core.lower(), "adapter must refuse self-serve user creation (CR-14)"
+    assert "conciergeAdapter" in AUTH.read_text(), "auth.ts must use the concierge adapter"
+    assert 'strategy: "database"' in AUTH.read_text(), "sessions must be persisted in Postgres (database strategy)"

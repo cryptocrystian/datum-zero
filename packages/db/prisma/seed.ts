@@ -30,6 +30,14 @@ const prisma = new PrismaClient({
   datasourceUrl: process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL,
 });
 
+// Fail LOUD if the generated client is stale: a missing enum value would silently fall back to the
+// column default and mis-seed a role (this is exactly how the pilot was once seeded as REVIEWER).
+for (const role of ["ADMIN", "REVIEWER", "PILOT"] as const) {
+  if (UserRole[role] === undefined) {
+    throw new Error(`Prisma client is stale — UserRole.${role} is missing. Run \`prisma generate\` before seeding.`);
+  }
+}
+
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
 const CONTRACT_ID = "00000000-0000-0000-0000-000000000002";
 const RULESET_ID = "00000000-0000-0000-0000-000000000003";
