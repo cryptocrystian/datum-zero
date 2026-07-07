@@ -15,7 +15,7 @@ export default async function SignInPage({
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-6">
       <div>
         <div className="font-mono text-[11px] uppercase tracking-widest text-datum-slate">
-          Datum Zero · Reality Ledger
+          Datum Zero Systems · Reality Ledger
         </div>
         <h1 className="mt-2 text-2xl font-bold uppercase tracking-wide text-white">Cockpit Sign-in</h1>
         <p className="mt-2 text-xs uppercase tracking-wider text-datum-slate">

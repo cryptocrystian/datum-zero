@@ -15,8 +15,13 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
-      <body className="min-h-screen bg-datum-midnight text-white antialiased">{children}</body>
+    // suppressHydrationWarning: browser extensions (e.g. ColorZilla's cz-shortcut-listen) inject
+    // attributes onto <html>/<body> before hydration. This suppresses ONLY attribute/text warnings
+    // on these two top-level tags — it does not mask real hydration mismatches in child components.
+    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`} suppressHydrationWarning>
+      <body className="min-h-screen bg-datum-midnight text-white antialiased" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }
