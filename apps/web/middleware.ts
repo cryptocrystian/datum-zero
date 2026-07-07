@@ -34,6 +34,8 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Everything except Next internals; exemptions handled above.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Everything except Next internals and PWA static assets (manifest, service worker, offline
+  // shell, icons) — those must load unauthenticated so the Infield Validator PWA can install and
+  // serve its offline shell (M1-04). They carry no tenant data.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|offline.html|icons/).*)"],
 };

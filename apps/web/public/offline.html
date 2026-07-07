@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#121926" />
+    <title>Infield Validator — Offline</title>
+    <style>
+      :root {
+        --midnight: #1a253a;
+        --darknavy: #121926;
+        --slate: #6d7278;
+        --gold: #e9d700;
+        --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+        --sans: system-ui, "Inter", -apple-system, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--darknavy);
+        color: #fff;
+        font-family: var(--sans);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        padding: 32px;
+        text-align: center;
+      }
+      .mono { font-family: var(--mono); }
+      .up { text-transform: uppercase; letter-spacing: 0.14em; }
+      h1 { margin: 0; font-size: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+      p { margin: 0; max-width: 34ch; font-size: 13px; line-height: 1.6; color: var(--slate); }
+      .tag { font-size: 11px; color: var(--slate); }
+      .status { border: 1px solid rgba(233, 215, 0, 0.4); border-radius: 4px; padding: 8px 14px; font-size: 11px; color: var(--gold); }
+    </style>
+  </head>
+  <body>
+    <svg width="56" height="56" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+      <line x1="1.5" y1="18" x2="34.5" y2="18" stroke="#6D7278" stroke-width="1.25" />
+      <rect x="11" y="4.5" width="14" height="27" rx="7" stroke="#fff" stroke-width="2.1" />
+      <path d="M13.6 27 L18 22.4 L22.4 27" stroke="#E9D700" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+    <div class="mono up tag">Datum Zero Systems · Infield Validator</div>
+    <h1>Off-Grid</h1>
+    <p>
+      No network. This on-site data-integrity tool will stage your capture sets again once a
+      connection returns. Selected files are never uploaded from this screen.
+    </p>
+    <div class="mono up status">Status: Offline — awaiting link</div>
+  </body>
+</html>

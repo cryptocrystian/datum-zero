@@ -54,6 +54,7 @@ enum OnboardingState {
 enum UserRole {
   ADMIN
   REVIEWER
+  PILOT
 }
 
 model User {

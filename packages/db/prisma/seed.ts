@@ -42,8 +42,10 @@ const HW_UNVERIFIED_ID = "00000000-0000-0000-0000-000000000008";
 // Concierge-provisioned cockpit users (M1-01, CR-20). No self-serve signup (CR-14).
 const ADMIN_USER_ID = "00000000-0000-0000-0000-0000000000a0";
 const REVIEWER_USER_ID = "00000000-0000-0000-0000-0000000000a1";
+const PILOT_USER_ID = "00000000-0000-0000-0000-0000000000a2";
 export const CONCIERGE_ADMIN_EMAIL = "admin@lighthouse-solar.example";
 export const CONCIERGE_REVIEWER_EMAIL = "reviewer@lighthouse-solar.example";
+export const CONCIERGE_PILOT_EMAIL = "pilot@lighthouse-solar.example";
 
 // Airframe serials matched at ingestion against the verified registry (CR-11).
 export const VERIFIED_AIRFRAME_SERIAL = "DZ-THERMAL-0001";
@@ -209,11 +211,17 @@ async function main() {
     update: { organizationId: org.id, role: UserRole.REVIEWER, email: CONCIERGE_REVIEWER_EMAIL },
     create: { id: REVIEWER_USER_ID, organizationId: org.id, role: UserRole.REVIEWER, email: CONCIERGE_REVIEWER_EMAIL, name: "QA Reviewer" },
   });
+  // Field pilot (M1-04, CR-11): signs into the Infield Validator PWA; org derives from the session.
+  await prisma.user.upsert({
+    where: { id: PILOT_USER_ID },
+    update: { organizationId: org.id, role: UserRole.PILOT, email: CONCIERGE_PILOT_EMAIL },
+    create: { id: PILOT_USER_ID, organizationId: org.id, role: UserRole.PILOT, email: CONCIERGE_PILOT_EMAIL, name: "Field Pilot" },
+  });
 
   console.log(
     `[seed] concierge tenant ready: org=${org.id} · ${assetCount} assets · 1 ruleset · 2 integrations · ` +
       `1 pilot · airframes(verified=${VERIFIED_AIRFRAME_SERIAL}, unverified=${UNVERIFIED_AIRFRAME_SERIAL}) · ` +
-      `users(${CONCIERGE_ADMIN_EMAIL}, ${CONCIERGE_REVIEWER_EMAIL})`,
+      `users(${CONCIERGE_ADMIN_EMAIL}, ${CONCIERGE_REVIEWER_EMAIL}, ${CONCIERGE_PILOT_EMAIL})`,
   );
 }
 
