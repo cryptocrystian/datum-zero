@@ -1,10 +1,15 @@
 """
-M0-05 inference pipeline: raw capture → deterministic detection → crops → evidence-only callback.
+Inference pipeline: raw capture → real detection (DET-1b) → crops → callback.
 
-Flow: download the raw image via the StoragePort, run the thermal detector, write the crops back
-through the StoragePort, build an EVIDENCE-ONLY payload (measurements only — no classification or
-recommendation; that is M0-07), and POST it to the Next.js callback which persists the Anomaly
-UNBOUND (CR-16). The engine never adjudicates and never emits verdict words (CR-12).
+Flow: download the raw frame via the StoragePort, run the real detector (hotspot proposer + DET-1a
+classifier + ΔT), write the ACTUAL pixel crops back through the StoragePort, build the callback
+payload, and POST it to the Next.js callback which persists the Anomaly UNBOUND (CR-16).
+
+The payload carries the MEASUREMENT layer (box, ΔT, confidence, crops) AND the standards
+CLASSIFICATION the model now raises (class + IEC TS 62446-3 category + priority) — all
+evidence-framed, no verdict words (CR-12). The model raises candidates; the human QA gate still
+adjudicates every dispatch (CR-12). The callback CONTRACT is unchanged: the extra classification
+fields are an additive superset the route may consume; persistence + spatial binding stay web-side.
 """
 from __future__ import annotations
 
@@ -34,7 +39,8 @@ def build_callback_payload(
     longitude: float | None,
     captured_at: str | None,
 ) -> dict[str, Any]:
-    """Assemble the evidence-only callback payload (snake_case on the wire, MANIFEST §3)."""
+    """Assemble the callback payload (snake_case on the wire, MANIFEST §3). Measurement fields
+    (M0-05 contract) plus the DET-1b standards classification the model raises — evidence-framed."""
     lat = SAMPLE_LATITUDE if latitude is None else latitude
     lon = SAMPLE_LONGITUDE if longitude is None else longitude
     return {
@@ -46,10 +52,20 @@ def build_callback_payload(
             "captured_at": captured_at,  # used only if the MediaAsset must be created
         },
         "detection": {
+            # measurement / evidence layer (unchanged contract fields)
             "confidence_score": detection.confidence_score,
             "metric_delta": detection.metric_delta,
             "metric_unit": detection.metric_unit,
             "bounding_box": detection.bounding_box,
+            # standards classification the model raises (model proposes; CR-12 human gate decides)
+            "class_label": detection.class_label,
+            "iec_category": detection.iec_category,
+            "priority": detection.priority,
+            "classification": detection.classification,
+            "standard_ref": detection.standard_ref,
+            # provenance / provisional flags
+            "radiometric": detection.radiometric,
+            "delta_provisional": detection.delta_provisional,
             "latitude": f"{lat:.6f}",
             "longitude": f"{lon:.6f}",
             "z_axis_offset": None,
@@ -92,12 +108,10 @@ def process_session(
     image = store.get(locator_to_key(raw_storage_path))
     detection = detect(image)
 
-    visual_bytes, analytics_bytes = render_crops(image)
+    visual_bytes, analytics_bytes = render_crops(image, detection.bounding_box)
     base = f"org/{organization_id}/anomalies/{ingestion_session_id}"
-    visual_crop_url = store.put(f"{base}/visual_crop.bin", visual_bytes, "application/octet-stream")
-    analytics_crop_url = store.put(
-        f"{base}/analytics_crop.bin", analytics_bytes, "application/octet-stream"
-    )
+    visual_crop_url = store.put(f"{base}/visual_crop.png", visual_bytes, "image/png")
+    analytics_crop_url = store.put(f"{base}/analytics_crop.png", analytics_bytes, "image/png")
 
     payload = build_callback_payload(
         ingestion_session_id=ingestion_session_id,

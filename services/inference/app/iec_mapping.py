@@ -78,3 +78,19 @@ def classify(label: str) -> IecClassification:
         condition=condition,
         environmental=environmental,
     )
+
+
+def served_priority(
+    base_category: int,
+    metric_delta: float,
+    *,
+    scheduled_delta: float = 10.0,
+    prompt_delta: float = 20.0,
+) -> tuple[int, str]:
+    """Combine the classifier's IEC category with the measured ΔT (°C) into the SERVED category +
+    priority (DET-1b). A high ΔT can only ESCALATE toward Cat 3 / PROMPT per the IEC matrix — it
+    never downgrades a pattern-class finding. Pure. PROVISIONAL bands (CR-19): the ΔT floors below
+    mirror the placeholder M0-07 cutoffs and await the standard's full matrix + field calibration."""
+    delta_category = 3 if metric_delta >= prompt_delta else 2 if metric_delta >= scheduled_delta else 1
+    served = max(base_category, delta_category)
+    return served, PRIORITY_BY_CATEGORY[served]

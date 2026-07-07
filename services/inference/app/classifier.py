@@ -38,12 +38,18 @@ def _session() -> tuple[ort.InferenceSession, tuple[str, ...], int]:
     return sess, labels, int(cfg["img_size"])
 
 
-def _preprocess(image: bytes, img_size: int) -> np.ndarray:
-    pil = Image.open(io.BytesIO(image)).convert("L").resize((img_size, img_size), Image.BILINEAR)
+def _preprocess_gray(gray_u8: np.ndarray, img_size: int) -> np.ndarray:
+    """uint8 2-D grayscale -> normalized 1x3xHxW float32 (SAME transform training used)."""
+    pil = Image.fromarray(gray_u8.astype(np.uint8), mode="L").resize((img_size, img_size), Image.BILINEAR)
     g = np.asarray(pil, dtype=np.float32) / 255.0
     x = np.stack([g, g, g], axis=0)  # 3xHxW
     x = (x - IMAGENET_MEAN[:, None, None]) / IMAGENET_STD[:, None, None]
     return x[None].astype(np.float32)  # 1x3xHxW
+
+
+def _preprocess(image: bytes, img_size: int) -> np.ndarray:
+    gray = np.asarray(Image.open(io.BytesIO(image)).convert("L"), dtype=np.uint8)
+    return _preprocess_gray(gray, img_size)
 
 
 def _softmax(z: np.ndarray) -> np.ndarray:
@@ -59,12 +65,9 @@ class Classification:
     model_version: str = MODEL_VERSION
 
 
-def classify_image(image: bytes) -> Classification:
-    """Classify a thermal crop -> anomaly class + IEC TS 62446-3 classification. Deterministic."""
-    if not image:
-        raise ValueError("empty image: nothing to classify")
-    sess, labels, img_size = _session()
-    logits = sess.run(None, {"input": _preprocess(image, img_size)})[0][0]
+def _classify_tensor(x: np.ndarray) -> Classification:
+    sess, labels, _ = _session()
+    logits = sess.run(None, {"input": x})[0][0]
     probs = _softmax(logits)
     idx = int(probs.argmax())
     return Classification(
@@ -72,3 +75,19 @@ def classify_image(image: bytes) -> Classification:
         confidence=round(float(probs[idx]), 4),
         iec=classify(labels[idx]),
     )
+
+
+def classify_image(image: bytes) -> Classification:
+    """Classify a thermal crop -> anomaly class + IEC TS 62446-3 classification. Deterministic."""
+    if not image:
+        raise ValueError("empty image: nothing to classify")
+    _, _, img_size = _session()
+    return _classify_tensor(_preprocess(image, img_size))
+
+
+def classify_array(gray_u8: np.ndarray) -> Classification:
+    """Classify an in-memory uint8 grayscale crop (a proposer region) — no re-encode. Deterministic."""
+    if gray_u8.size == 0:
+        raise ValueError("empty crop: nothing to classify")
+    _, _, img_size = _session()
+    return _classify_tensor(_preprocess_gray(gray_u8, img_size))
