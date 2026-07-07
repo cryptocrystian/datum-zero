@@ -8,7 +8,7 @@ export interface ValidationState {
   report: ValidationReport | null;
   progress: { done: number; total: number } | null;
   running: boolean;
-  run: (files: File[]) => void;
+  run: (files: File[], logFile?: File | null) => void;
   reset: () => void;
 }
 
@@ -24,7 +24,7 @@ export function useValidation(): ValidationState {
 
   useEffect(() => () => workerRef.current?.terminate(), []);
 
-  const run = useCallback((files: File[]) => {
+  const run = useCallback((files: File[], logFile?: File | null) => {
     if (files.length === 0) return;
     workerRef.current?.terminate();
     setReport(null);
@@ -49,7 +49,7 @@ export function useValidation(): ValidationState {
       setRunning(false);
       setProgress(null);
     };
-    worker.postMessage({ files });
+    worker.postMessage({ files, logFile: logFile ?? null });
   }, []);
 
   const reset = useCallback(() => {

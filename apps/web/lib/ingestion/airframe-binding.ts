@@ -71,3 +71,39 @@ export async function bindAirframe(params: {
     approvedListRef: hardware.approvedListRef ?? null,
   };
 }
+
+export type AirframeScreenResult = {
+  serial: string;
+  status: "VERIFIED" | "UNVERIFIED" | "UNKNOWN";
+  matchedField: "serialNumber" | "remoteIdSerial" | null;
+  message: string;
+};
+
+/**
+ * Read-only registry SCREEN for the Infield Validator pre-check (M1-06). Matches a serial against
+ * the tenant's PilotHardware by EITHER serialNumber (from EXIF) OR remoteIdSerial (from an uploaded
+ * flight log), tenant-scoped (org or marketplace pool). Non-mutating; the authoritative gate remains
+ * the server-side bindAirframe at ingestion. Evidence-framed, never an attestation (CR-11).
+ */
+export async function screenAirframe(organizationId: string, serialRaw: string): Promise<AirframeScreenResult> {
+  const serial = serialRaw?.trim() ?? "";
+  if (!serial) return { serial, status: "UNKNOWN", matchedField: null, message: "No serial supplied." };
+
+  const hw = await prisma.pilotHardware.findFirst({
+    where: {
+      OR: [{ serialNumber: serial }, { remoteIdSerial: serial }],
+      pilot: { OR: [{ organizationId }, { organizationId: null }] },
+    },
+    select: { serialNumber: true, remoteIdSerial: true, aircraftModel: true, ndaaVerified: true, verifiedAt: true, approvedListRef: true },
+  });
+
+  if (!hw) {
+    return { serial, status: "UNKNOWN", matchedField: null, message: `Serial ${serial} is not in this tenant's airframe registry.` };
+  }
+  const matchedField = hw.serialNumber === serial ? "serialNumber" : "remoteIdSerial";
+  if (!hw.ndaaVerified || !hw.verifiedAt) {
+    return { serial, status: "UNVERIFIED", matchedField, message: `Airframe ${serial} (${hw.aircraftModel}) is registered but not verified.` };
+  }
+  const ref = hw.approvedListRef ? ` · ${hw.approvedListRef}` : "";
+  return { serial, status: "VERIFIED", matchedField, message: `Airframe ${serial} (${hw.aircraftModel}) registered + verified${ref}.` };
+}

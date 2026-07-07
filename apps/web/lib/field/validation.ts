@@ -11,7 +11,9 @@
  */
 
 export type CheckStatus = "PASS" | "WARN" | "FAIL";
+/** Quality checks (M1-05) run purely from EXIF; hardware checks (M1-06) also consult the registry. */
 export type CheckKey = "frame" | "gps" | "sunGlare" | "exposure" | "overlap";
+export type HardwareCheckKey = "ndaa" | "airframe";
 
 export interface CheckResult {
   status: CheckStatus;
@@ -33,17 +35,48 @@ export interface FrameMeta {
   fNumber: number | null;
   imageWidth: number | null; // px
   imageHeight: number | null; // px
+  make: string | null; // camera/drone manufacturer (NDAA heuristic screen, M1-06)
+  model: string | null;
+  serialNumber: string | null; // airframe/camera serial (verified-airframe screen, M1-06)
+}
+
+// --- hardware registry screen (M1-06). The worker resolves these via an authenticated, org-scoped
+// API BEFORE calling the pure validator, so validateCaptureSet stays pure/deterministic. ---
+export type AirframeScreenStatus = "VERIFIED" | "UNVERIFIED" | "UNKNOWN";
+
+export interface AirframeScreen {
+  serial: string;
+  status: AirframeScreenStatus;
+  message: string;
+}
+
+/** Optional flight-log telemetry screen — a serial parsed from an UPLOADED log (never live). */
+export interface TelemetryScreen {
+  logName: string;
+  serial: string | null;
+  status: AirframeScreenStatus | "UNREADABLE";
+  message: string;
+}
+
+export interface RegistryScreen {
+  airframeBySerial: Record<string, AirframeScreen>;
+  telemetry?: TelemetryScreen | null;
 }
 
 export interface FileResult {
   name: string;
   index: number;
-  status: CheckStatus; // worst of the individual checks
+  status: CheckStatus; // worst of every check (quality + hardware)
+  uploadEligible: boolean; // no FAIL in any check — the client-side gate before upload (M1-06)
+  serial: string | null; // extracted airframe serial, for the authoritative server-side bind
+  capturedAt: number | null;
   checks: Record<CheckKey, CheckResult>;
+  hardware?: Record<HardwareCheckKey, CheckResult>; // present only when a registry screen is supplied
 }
 
 export interface RunSummary {
   total: number;
+  eligible: number; // frames eligible to upload (no FAIL)
   counts: Record<CheckStatus, number>; // by worst-per-file status
   status: CheckStatus; // overall worst
   notes: string[]; // set-level, evidence-framed observations
@@ -70,6 +103,13 @@ export interface ValidationConfig {
   exposureTimeFailAboveSec: number;
   /** Minimum frame count for a usable set. */
   minFrameCount: number;
+  /**
+   * NDAA heuristic blocklist — manufacturer name fragments (lowercase) commonly cited on U.S.
+   * covered-foreign-entity / NDAA §848 discussions. This is a HEURISTIC SCREENING SIGNAL from the
+   * EXIF Make/Model, NOT an attestation of compliance (CR-11): the authoritative check is the
+   * server-side registry serial-match. Update from counsel / official cleared-lists.
+   */
+  ndaaBlocklist: string[];
 }
 
 /**
@@ -88,6 +128,8 @@ export const DEFAULT_VALIDATION_CONFIG: ValidationConfig = {
   exposureTimeWarnAboveSec: 1 / 100,
   exposureTimeFailAboveSec: 1 / 50,
   minFrameCount: 20,
+  // Documented heuristic (non-authoritative): common covered-entity manufacturers.
+  ndaaBlocklist: ["dji", "da-jiang", "autel", "yuneec", "hubsan", "holy stone"],
 };
 
 const RAD = Math.PI / 180;
@@ -256,6 +298,49 @@ export function checkOverlap(f: FrameMeta, prev: FrameMeta | null, config: Valid
   return { status: "PASS", reason: `Forward overlap ~${shown}%.` };
 }
 
+// --- hardware checks (M1-06) ---
+
+/**
+ * NDAA HEURISTIC screen — a SCREENING SIGNAL from the EXIF manufacturer, explicitly NOT an
+ * attestation of compliance (CR-11). A covered manufacturer only WARNs; the authoritative gate is
+ * the verified-airframe registry match (checkAirframe) + the server-side bind at ingestion.
+ */
+export function checkNdaa(f: FrameMeta, config: ValidationConfig): CheckResult {
+  const hay = `${f.make ?? ""} ${f.model ?? ""}`.toLowerCase();
+  if (f.make == null && f.model == null) {
+    return { status: "WARN", reason: "Manufacturer absent from EXIF — cannot screen; registry match required." };
+  }
+  const hit = config.ndaaBlocklist.find((m) => hay.includes(m));
+  if (hit) {
+    const maker = f.make ?? f.model ?? "device";
+    return {
+      status: "WARN",
+      reason: `${maker} matches a covered-entity screening term ("${hit}") — heuristic only; confirm via the airframe registry.`,
+    };
+  }
+  return { status: "PASS", reason: `Manufacturer ${f.make ?? f.model} — no covered-entity term matched (heuristic).` };
+}
+
+/**
+ * Verified-airframe screen — match the EXIF serial against the pilot's registered, VERIFIED
+ * PilotHardware (pre-resolved by the worker via the authenticated, org-scoped API). Fail closed:
+ * an unknown or unverified airframe FAILs (CR-11). This is a convenience pre-check; the server-side
+ * bind at ingestion is authoritative.
+ */
+export function checkAirframe(f: FrameMeta, registry: RegistryScreen): CheckResult {
+  if (f.serialNumber == null) {
+    return { status: "WARN", reason: "No airframe serial in EXIF — the server will attempt the authoritative bind on upload." };
+  }
+  const screen = registry.airframeBySerial[f.serialNumber];
+  if (!screen || screen.status === "UNKNOWN") {
+    return { status: "FAIL", reason: `Serial ${f.serialNumber} not found in the airframe registry.` };
+  }
+  if (screen.status === "UNVERIFIED") {
+    return { status: "FAIL", reason: screen.message || `Airframe ${f.serialNumber} is registered but not verified.` };
+  }
+  return { status: "PASS", reason: screen.message || `Airframe ${f.serialNumber} registered + verified.` };
+}
+
 /** Extract a trailing frame number from a filename (e.g. DJI_0042.JPG -> 42) for gap detection. */
 function frameNumber(name: string): number | null {
   const m = name.match(/(\d+)(?=\.[^.]+$)/);
@@ -290,10 +375,17 @@ function buildNotes(frames: FrameMeta[], files: FileResult[], config: Validation
   return notes;
 }
 
-/** Validate a staged capture set (frames in capture order). Pure + deterministic. */
+/**
+ * Validate a staged capture set (frames in capture order). Pure + deterministic.
+ *
+ * When a `registry` screen is supplied (M1-06), each frame also gets hardware checks (NDAA heuristic
+ * + verified-airframe). A frame is `uploadEligible` only if NO check FAILs — the client-side gate
+ * before the authoritative server-side bind at ingestion.
+ */
 export function validateCaptureSet(
   frames: FrameMeta[],
   config: ValidationConfig = DEFAULT_VALIDATION_CONFIG,
+  registry?: RegistryScreen,
 ): ValidationReport {
   const files: FileResult[] = frames.map((f, i) => {
     const prev = i > 0 ? frames[i - 1] : null;
@@ -304,20 +396,45 @@ export function validateCaptureSet(
       exposure: checkExposure(f, config),
       overlap: checkOverlap(f, prev, config),
     };
-    const status = worstOf(Object.values(checks).map((c) => c.status));
-    return { name: f.name, index: f.index, status, checks };
+    const hardware = registry
+      ? { ndaa: checkNdaa(f, config), airframe: checkAirframe(f, registry) }
+      : undefined;
+    const all = [...Object.values(checks), ...(hardware ? Object.values(hardware) : [])];
+    const status = worstOf(all.map((c) => c.status));
+    return {
+      name: f.name,
+      index: f.index,
+      status,
+      uploadEligible: status !== "FAIL",
+      serial: f.serialNumber,
+      capturedAt: f.capturedAt,
+      checks,
+      hardware,
+    };
   });
 
   const counts: Record<CheckStatus, number> = { PASS: 0, WARN: 0, FAIL: 0 };
   for (const f of files) counts[f.status] += 1;
 
+  const notes = buildNotes(frames, files, config);
+  let summaryStatus = worstOf(files.map((f) => f.status));
+
+  // Optional flight-log telemetry cross-check (M1-06): informational — surfaces a note and can WARN
+  // the set, but never blocks upload on its own (the per-file airframe check + server bind gate).
+  const tel = registry?.telemetry;
+  if (tel) {
+    notes.push(tel.message);
+    if (tel.status !== "VERIFIED") summaryStatus = worstOf([summaryStatus, "WARN"]);
+  }
+
   return {
     files,
     summary: {
       total: frames.length,
+      eligible: files.filter((f) => f.uploadEligible).length,
       counts,
-      status: worstOf(files.map((f) => f.status)),
-      notes: buildNotes(frames, files, config),
+      status: summaryStatus,
+      notes,
     },
   };
 }

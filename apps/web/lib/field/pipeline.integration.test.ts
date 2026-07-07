@@ -38,6 +38,7 @@ describe("validation pipeline over sample-image fixtures (real EXIF via exifr)",
     expect(frames[0].altitude).toBe(100);
     expect(frames[0].iso).toBe(200);
     expect(frames[0].focalLength35).toBe(24);
+    expect(frames[0].make).toBe("DJI"); // hardware-screening tag (M1-06)
     expect(frames[3].latitude).toBeNull(); // DJI_0004 was written without GPS
   });
 

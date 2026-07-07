@@ -19,10 +19,19 @@ export interface ExifData {
   ExifImageHeight?: number;
   ImageWidth?: number;
   ImageHeight?: number;
+  // hardware-screening tags (M1-06)
+  Make?: string;
+  Model?: string;
+  SerialNumber?: string;
+  BodySerialNumber?: string;
 }
 
 function numOrNull(x: unknown): number | null {
   return typeof x === "number" && Number.isFinite(x) ? x : null;
+}
+
+function strOrNull(x: unknown): string | null {
+  return typeof x === "string" && x.trim().length > 0 ? x.trim() : null;
 }
 
 /** EXIF DateTimeOriginal (Date | ISO string | epoch ms) -> ms epoch, else null. */
@@ -54,5 +63,8 @@ export function frameFromExif(
     fNumber: numOrNull(exif?.FNumber),
     imageWidth: numOrNull(exif?.ExifImageWidth ?? exif?.ImageWidth),
     imageHeight: numOrNull(exif?.ExifImageHeight ?? exif?.ImageHeight),
+    make: strOrNull(exif?.Make),
+    model: strOrNull(exif?.Model),
+    serialNumber: strOrNull(exif?.SerialNumber ?? exif?.BodySerialNumber),
   };
 }

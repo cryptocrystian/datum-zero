@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { prisma, runWithOrg, CaptureModality } from "@dz/db";
 import { storage } from "@dz/storage";
 import { bindAirframe } from "@/lib/ingestion/airframe-binding";
+import { getSession } from "@/lib/session";
 
 // Needs Node APIs (Buffer, crypto, storage SDK) — not the edge runtime.
 export const runtime = "nodejs";
@@ -26,21 +27,27 @@ function authorize(req: NextRequest): boolean {
 }
 
 /**
- * M0-04 — Ingestion stub (CR-11).
+ * M0-04 ingestion (CR-11) — the AUTHORITATIVE server-side gate. Extended in M1-06 to dual-auth:
+ *  • a signed-in pilot (session) — org derives from the session (RLS), used by the field PWA; or
+ *  • a machine (bearer INGEST_API_TOKEN) — org from the form.
  *
- * Authenticated upload of a capture + metadata. The pipeline FAILS CLOSED before any row is
- * written: the airframe serial must match a VERIFIED entry in the registry (CR-11). Only then
- * do we write bytes through the StoragePort and create IngestionSession + MediaAsset.
+ * FAILS CLOSED before any row is written: the airframe serial must match a VERIFIED registry entry
+ * (CR-11) — else 422. Only then do we write bytes and create IngestionSession + MediaAsset. The
+ * Infield Validator's client screen is a convenience pre-check; THIS is the real gate (two layers).
  */
 export async function POST(req: NextRequest) {
-  if (process.env.INGEST_API_TOKEN === undefined) {
-    return NextResponse.json(
-      { error: "ingestion_unconfigured", message: "INGEST_API_TOKEN is not set; failing closed." },
-      { status: 503 },
-    );
-  }
-  if (!authorize(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Auth: a real pilot session takes precedence; otherwise require the machine bearer token.
+  const session = await getSession();
+  if (!session) {
+    if (process.env.INGEST_API_TOKEN === undefined) {
+      return NextResponse.json(
+        { error: "ingestion_unconfigured", message: "INGEST_API_TOKEN is not set; failing closed." },
+        { status: 503 },
+      );
+    }
+    if (!authorize(req)) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
   }
 
   const form = await req.formData().catch(() => null);
@@ -48,7 +55,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unsupported_media_type", message: "expected multipart/form-data" }, { status: 415 });
   }
 
-  const organizationId = String(form.get("organizationId") ?? "").trim();
+  // Session requests are org-scoped by the session (a pilot can never ingest into another tenant);
+  // machine requests carry the org in the form.
+  const organizationId = session ? session.organizationId : String(form.get("organizationId") ?? "").trim();
   const modality = String(form.get("modality") ?? "").trim();
   const airframeSerial = String(form.get("airframeSerial") ?? "").trim();
   const capturedAtRaw = String(form.get("capturedAt") ?? "").trim();

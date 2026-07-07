@@ -20,13 +20,16 @@ MANIFEST = WEB / "public/manifest.webmanifest"
 SW = WEB / "public/sw.js"
 OFFLINE = WEB / "public/offline.html"
 
-# CR-11: the Infield Validator must NOT claim live Remote-ID capture/verification or in-browser NDAA
-# attestation. NDAA/airframe compliance is a server-side registry serial-match, never in the browser.
+# CR-11: ban CLAIMS of live Remote-ID capture/verification or in-browser NDAA attestation — NOT the
+# words themselves. M1-06 legitimately references the remoteIdSerial registry field and runs an NDAA
+# HEURISTIC screen; the compliance gate is a server-side registry serial-match, never in the browser.
 PROHIBITED = [
-    re.compile(r"remote[\s-]?id", re.I),
-    re.compile(r"\bndaa\b", re.I),
+    re.compile(r"live\s+remote[\s-]?id", re.I),
+    re.compile(r"remote[\s-]?id\s+(?:verif|captur|broadcast|attest|scan|receiv)", re.I),
+    re.compile(r"(?:verif|captur|broadcast|attest|receiv)\w*\s+(?:the\s+|a\s+)?remote[\s-]?id", re.I),
+    re.compile(r"\bndaa\b[\s\S]{0,25}attest", re.I),
+    re.compile(r"attest\w*[\s\S]{0,25}\bndaa\b", re.I),
     re.compile(r"in[\s-]?browser[\s\S]{0,40}attest", re.I),
-    re.compile(r"live[\s\S]{0,20}remote", re.I),
 ]
 
 

@@ -8,10 +8,21 @@ import {
   checkSunGlare,
   checkExposure,
   checkOverlap,
+  checkNdaa,
+  checkAirframe,
   solarElevationDeg,
   haversineMeters,
   validateCaptureSet,
+  type RegistryScreen,
 } from "./validation";
+
+// A registry screen where the seeded verified serial resolves VERIFIED and the rest are flagged.
+const REGISTRY: RegistryScreen = {
+  airframeBySerial: {
+    "DZ-THERMAL-0001": { serial: "DZ-THERMAL-0001", status: "VERIFIED", message: "Airframe DZ-THERMAL-0001 (Skydio X10D) registered + verified." },
+    "DZ-THERMAL-9999": { serial: "DZ-THERMAL-9999", status: "UNVERIFIED", message: "Airframe DZ-THERMAL-9999 is registered but not verified." },
+  },
+};
 
 // A nominal, healthy frame near the seeded Arizona site, ~28 min before local solar noon in June.
 const NOON = Date.UTC(2023, 5, 21, 19, 0, 0);
@@ -34,6 +45,9 @@ function frame(over: Partial<FrameMeta> = {}, index = 0): FrameMeta {
     fNumber: 5.6,
     imageWidth: 5472,
     imageHeight: 3648,
+    make: "Skydio",
+    model: "X10D",
+    serialNumber: "DZ-THERMAL-0001",
     ...over,
   };
 }
@@ -201,5 +215,70 @@ describe("validateCaptureSet (whole-set fixtures)", () => {
   it("is deterministic — same input, identical report", () => {
     const frames = line(10, 40, { iso: 1600 });
     expect(JSON.stringify(validateCaptureSet(frames))).toBe(JSON.stringify(validateCaptureSet(frames)));
+  });
+});
+
+describe("checkNdaa (heuristic screen — WARN only, never attestation)", () => {
+  it("PASS for a non-covered manufacturer", () => {
+    expect(checkNdaa(frame({ make: "Skydio", model: "X10D" }), DEFAULT_VALIDATION_CONFIG).status).toBe("PASS");
+  });
+  it("WARN for a covered manufacturer (never FAIL)", () => {
+    const r = checkNdaa(frame({ make: "DJI", model: "Mavic 3T" }), DEFAULT_VALIDATION_CONFIG);
+    expect(r.status).toBe("WARN");
+    expect(r.reason).toMatch(/heuristic/i);
+  });
+  it("WARN when manufacturer is absent (can't screen)", () => {
+    expect(checkNdaa(frame({ make: null, model: null }), DEFAULT_VALIDATION_CONFIG).status).toBe("WARN");
+  });
+});
+
+describe("checkAirframe (verified-airframe screen — fail closed)", () => {
+  it("PASS for a verified serial", () => {
+    expect(checkAirframe(frame({ serialNumber: "DZ-THERMAL-0001" }), REGISTRY).status).toBe("PASS");
+  });
+  it("FAIL for a registered-but-unverified serial", () => {
+    expect(checkAirframe(frame({ serialNumber: "DZ-THERMAL-9999" }), REGISTRY).status).toBe("FAIL");
+  });
+  it("FAIL for an unknown serial", () => {
+    expect(checkAirframe(frame({ serialNumber: "NOPE-0000" }), REGISTRY).status).toBe("FAIL");
+  });
+  it("WARN when no serial is present (server will bind authoritatively)", () => {
+    expect(checkAirframe(frame({ serialNumber: null }), REGISTRY).status).toBe("WARN");
+  });
+});
+
+describe("validateCaptureSet with a registry — upload eligibility gate (M1-06)", () => {
+  it("verified airframe: hardware checks pass, frames stay upload-eligible", () => {
+    const report = validateCaptureSet(line(3, 30), DEFAULT_VALIDATION_CONFIG, REGISTRY);
+    expect(report.files.every((f) => f.hardware?.airframe.status === "PASS")).toBe(true);
+    expect(report.files.every((f) => f.uploadEligible)).toBe(true);
+    expect(report.summary.eligible).toBe(3);
+  });
+
+  it("unverified airframe: every frame FAILs the airframe check and is NOT upload-eligible", () => {
+    const report = validateCaptureSet(line(3, 30, { serialNumber: "DZ-THERMAL-9999" }), DEFAULT_VALIDATION_CONFIG, REGISTRY);
+    expect(report.files.every((f) => f.hardware?.airframe.status === "FAIL")).toBe(true);
+    expect(report.files.every((f) => f.uploadEligible === false)).toBe(true);
+    expect(report.summary.eligible).toBe(0);
+  });
+
+  it("a covered manufacturer with a verified airframe WARNs but stays eligible (WARN != FAIL)", () => {
+    const report = validateCaptureSet(line(2, 30, { make: "DJI", model: "Matrice" }), DEFAULT_VALIDATION_CONFIG, REGISTRY);
+    expect(report.files.every((f) => f.hardware?.ndaa.status === "WARN")).toBe(true);
+    expect(report.files.every((f) => f.uploadEligible)).toBe(true); // verified serial -> WARN overall
+  });
+
+  it("without a registry there are no hardware checks (M1-05 behavior preserved)", () => {
+    const report = validateCaptureSet(line(3, 30), DEFAULT_VALIDATION_CONFIG);
+    expect(report.files.every((f) => f.hardware === undefined)).toBe(true);
+  });
+
+  it("folds an optional telemetry note into the summary", () => {
+    const registry: RegistryScreen = {
+      ...REGISTRY,
+      telemetry: { logName: "flight.log", serial: "DZ-THERMAL-0001", status: "VERIFIED", message: "Telemetry serial matches a verified airframe." },
+    };
+    const report = validateCaptureSet(line(2, 30), DEFAULT_VALIDATION_CONFIG, registry);
+    expect(report.summary.notes.some((n) => /Telemetry serial/.test(n))).toBe(true);
   });
 });

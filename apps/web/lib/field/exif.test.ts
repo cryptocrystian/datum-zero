@@ -13,6 +13,9 @@ const DRONE_EXIF: ExifData = {
   FNumber: 5.6,
   ExifImageWidth: 5472,
   ExifImageHeight: 3648,
+  Make: "Skydio",
+  Model: "X10D",
+  SerialNumber: "DZ-THERMAL-0001",
 };
 
 describe("toMillis", () => {
@@ -44,6 +47,9 @@ describe("frameFromExif", () => {
       iso: 200,
       imageWidth: 5472,
       imageHeight: 3648,
+      make: "Skydio",
+      model: "X10D",
+      serialNumber: "DZ-THERMAL-0001",
     });
   });
 
@@ -62,9 +68,11 @@ describe("frameFromExif", () => {
       CreateDate: "2023-01-02T03:04:05Z",
       ImageWidth: 4000,
       ImageHeight: 3000,
+      BodySerialNumber: "SN-ALT-77",
     });
     expect(f.capturedAt).toBe(Date.UTC(2023, 0, 2, 3, 4, 5));
     expect(f.imageWidth).toBe(4000);
     expect(f.imageHeight).toBe(3000);
+    expect(f.serialNumber).toBe("SN-ALT-77");
   });
 });
