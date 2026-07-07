@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { prisma, runWithOrg, SpatialBindingStatus } from "@dz/db";
 import { bindUnboundAnomalies } from "@/lib/binding/spatial-binding";
-import { classifyBoundAnomalies } from "@/lib/rules/classify";
+import { applyPolicyToBoundAnomalies } from "@/lib/rules/classify";
 
 // Needs Node APIs (crypto, Prisma) — not the edge runtime.
 export const runtime = "nodejs";
@@ -30,15 +30,15 @@ function deterministicUuid(seed: string): string {
 }
 
 /**
- * M0-05/06/07 — inference callback + post-detection pipeline (CR-12, CR-15, CR-16).
+ * DET-1c — inference callback + post-detection pipeline (CR-12, CR-15 amend, CR-16, CR-19).
  *
- * The callback itself persists the detector's EVIDENCE as an Anomaly — measurements + crops +
- * modelVersion only, created UNBOUND (assetId null, spatialBindingStatus = UNBOUND_REVIEW). It then
- * runs the pipeline as distinct stages via their libraries: spatial binding (M0-06) resolves the
- * assetId, then tolerance-eval (M0-07) sets the measurement + evidence-framed recommendation on
- * newly BOUND anomalies. The callback never writes the adjudication layer inline — the rules lib
- * does. `status` stays PENDING_QA throughout; an unbound anomaly is never classified or dispatched.
- * Org-scoped and idempotent.
+ * The callback persists the detector's evidence AND the MODEL's classification (CR-19 owns the type):
+ * measurements + crops + modelVersion + standardRef + classification, created UNBOUND (assetId null,
+ * spatialBindingStatus = UNBOUND_REVIEW). It then runs the pipeline as distinct stages via their
+ * libraries: spatial binding (M0-06) resolves the assetId, then the RuleSet CLIENT POLICY (classify)
+ * sets priority + routeTargets-linked recommendation on newly BOUND anomalies. The policy never
+ * writes the model's classification/standardRef and never advances `status` (stays PENDING_QA); an
+ * unbound anomaly is never routed or dispatched. Org-scoped and idempotent.
  */
 export async function POST(req: NextRequest) {
   if (process.env.INFERENCE_CALLBACK_TOKEN === undefined) {
@@ -72,6 +72,11 @@ export async function POST(req: NextRequest) {
   if (!d.visual_crop_url || !d.analytics_crop_url) {
     return badRequest("detection crop URLs are required");
   }
+  // DET-1c: the model owns the classification (CR-19). Fail closed if it did not classify.
+  const classification = String(d.classification ?? "").trim();
+  const standardRefIn = String(d.standard_ref ?? "").trim();
+  if (!classification) return badRequest("detection.classification is required (model owns the type — CR-19)");
+  if (!standardRefIn) return badRequest("detection.standard_ref is required (measurement anchor — CR-15)");
 
   // Bind the RLS org context for every tenant read/write below — defense-in-depth (M1-02, CR-20).
   return runWithOrg(organizationId, async () => {
@@ -101,7 +106,8 @@ export async function POST(req: NextRequest) {
     const boundingBox = d.bounding_box.map((n: unknown) => Math.trunc(Number(n)));
     const anomalyId = deterministicUuid(`${ingestionSessionId}:${boundingBox.join(",")}`);
 
-    // Evidence layer ONLY — the adjudication layer (classification/recommendation/ruleSet) is M0-07.
+    // Evidence + the MODEL's classification (CR-19 owns the type). The client-POLICY layer
+    // (priority / routeTargets / recommendation) is applied later by the rules lib on BOUND anomalies.
     const evidence = {
       organizationId,
       mediaAssetId: mediaAsset.id,
@@ -112,6 +118,9 @@ export async function POST(req: NextRequest) {
       confidenceScore: d.confidence_score,
       metricDelta: d.metric_delta,
       metricUnit: d.metric_unit ?? null,
+      // Measurement/classification layer — the model's authority (CR-19, CR-15).
+      standardRef: standardRefIn,
+      classification,
       visualCropUrl: String(d.visual_crop_url),
       analyticsCropUrl: String(d.analytics_crop_url),
       modelVersion,
@@ -127,14 +136,22 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
 
-    // Post-detection pipeline (distinct stages, each in its own lib): bind (M0-06) then classify
-    // newly BOUND anomalies (M0-07). status stays PENDING_QA; unbound anomalies are never classified.
+    // Post-detection pipeline (distinct stages, each in its own lib): bind (M0-06) then apply the
+    // client RuleSet POLICY to newly BOUND anomalies (DET-1c). status stays PENDING_QA; unbound
+    // anomalies are never routed.
     await bindUnboundAnomalies(organizationId);
-    await classifyBoundAnomalies(organizationId);
+    await applyPolicyToBoundAnomalies(organizationId);
 
     const final = await prisma.anomaly.findFirst({
       where: { id: anomaly.id, organizationId },
-      select: { id: true, spatialBindingStatus: true, status: true, modelVersion: true },
+      select: {
+        id: true,
+        spatialBindingStatus: true,
+        status: true,
+        modelVersion: true,
+        classification: true,
+        priority: true,
+      },
     });
 
     return NextResponse.json(
@@ -143,6 +160,8 @@ export async function POST(req: NextRequest) {
         spatialBindingStatus: final?.spatialBindingStatus,
         status: final?.status,
         modelVersion: final?.modelVersion,
+        classification: final?.classification,
+        priority: final?.priority,
       },
       { status: 201 },
     );

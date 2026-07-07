@@ -244,6 +244,9 @@ model Anomaly {
 
   // --- Adjudication layer (CR-12): recommendation only; client decides outcome ---
   status             QueueStatus  @default(PENDING_QA)
+  // Maintenance priority from the client RuleSet POLICY over the model classification + ΔT (DET-1c,
+  // CR-15 amend): MONITOR | SCHEDULED | PROMPT. Evidence-framed severity, NEVER a verdict.
+  priority           String?
   recommendation     String?      // evidence-framed, e.g. "review recommended vs. IEC TS 62446-3 Cat 2"
   ruleSetId          String?
   ruleSet            RuleSet?     @relation(fields: [ruleSetId], references: [id])

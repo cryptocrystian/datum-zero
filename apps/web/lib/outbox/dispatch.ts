@@ -44,6 +44,7 @@ export async function dispatchAnomaly(
       boundingBox: true,
       visualCropUrl: true,
       analyticsCropUrl: true,
+      ruleSet: { select: { routeTargets: true } },
       asset: {
         select: { internalLabel: true, latitude: true, longitude: true, cadObjectId: true, erpAssetId: true, procoreLocationId: true },
       },
@@ -60,13 +61,20 @@ export async function dispatchAnomaly(
     throw new DispatchGateError("QA gate: approved anomaly is missing asset/reviewer — dispatch refused.");
   }
 
-  // Fan out to EVERY active integration that has a registered adapter (registry-driven, not
-  // hardcoded) — one approval → one WorkOrderDispatch per target (e.g. GENERIC_WEBHOOK + NATIVE_JIRA).
+  // Routing is client POLICY (DET-1c, CR-15 amend): fan out to the active integrations whose
+  // targetType is in the matched RuleSet's routeTargets — and that have a registered adapter. If no
+  // policy routing is set (no RuleSet / empty routeTargets), fall back to every active adapter target
+  // (backward-compatible; the QA gate remains the safety, CR-12).
   const active = await prisma.integration.findMany({
     where: { organizationId, isActive: true },
     select: { id: true, targetType: true },
   });
-  const integrations = active.filter((i) => getAdapter(i.targetType) !== undefined);
+  const routeTargets = anomaly.ruleSet?.routeTargets ?? [];
+  const withAdapter = active.filter((i) => getAdapter(i.targetType) !== undefined);
+  const integrations =
+    routeTargets.length > 0
+      ? withAdapter.filter((i) => routeTargets.includes(i.targetType))
+      : withAdapter;
 
   const emittedAt = new Date().toISOString();
   let dispatched = 0;

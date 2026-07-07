@@ -1,44 +1,50 @@
 import { prisma, SpatialBindingStatus } from "@dz/db";
-import { classify, type RuleSpec } from "./tolerance-eval";
+import { applyPolicy, type PolicySpec } from "./tolerance-eval";
 
 /**
- * M0-07 — classification orchestration (CR-12, CR-15).
+ * M0-07 (reframed DET-1c) — client-policy application (CR-12, CR-15 amend).
  *
- * Only BOUND anomalies are classified (fail closed on identity — an UNBOUND anomaly is never
- * classified and never dispatches). On a RuleSet match we set the measurement layer
- * (standardRef + classification) and an evidence-framed recommendation, and link the ruleSetId.
- * `status` stays PENDING_QA — classification NEVER advances the queue toward dispatch (CR-12).
- * Org-scoped and idempotent.
+ * The MODEL owns the anomaly TYPE (classification + standardRef), persisted at the inference callback
+ * (CR-19). This step applies the client's RuleSet POLICY to a BOUND anomaly: it consumes the model
+ * classification + ΔT + confidence and sets the maintenance `priority`, an evidence-framed
+ * `recommendation`, and links the `ruleSetId` (whose `routeTargets` drive dispatch routing). It does
+ * NOT write classification/standardRef — those are the model's authority and already persisted.
+ *
+ * Only BOUND anomalies get policy (fail closed on identity — routing needs an asset). `status` stays
+ * PENDING_QA: policy NEVER advances the queue toward dispatch (CR-12). Org-scoped and idempotent.
  */
 
-export interface ClassifyOutcome {
+export interface PolicyOutcome {
   anomalyId: string;
-  classified: boolean;
+  applied: boolean;
   ruleSetId?: string;
-  classification?: string;
+  priority?: string;
 }
 
-export async function classifyAnomaly(
+export async function applyClientPolicy(
   anomalyId: string,
   organizationId: string,
-): Promise<ClassifyOutcome> {
-  // Tenant-scoped, and only BOUND anomalies are eligible (fail closed).
+): Promise<PolicyOutcome> {
+  // Tenant-scoped, BOUND-only (fail closed).
   const anomaly = await prisma.anomaly.findFirst({
     where: { id: anomalyId, organizationId, spatialBindingStatus: SpatialBindingStatus.BOUND },
     select: {
       id: true,
+      classification: true,
+      standardRef: true,
       metricDelta: true,
       metricUnit: true,
       confidenceScore: true,
-      classification: true,
+      ruleSetId: true,
       mediaAsset: { select: { ingestionSession: { select: { modality: true } } } },
     },
   });
-  if (!anomaly) return { anomalyId, classified: false }; // unbound / not in org → not eligible
-  if (anomaly.classification) return { anomalyId, classified: false }; // idempotent — already classified
+  if (!anomaly) return { anomalyId, applied: false }; // unbound / not in org → not eligible
+  if (anomaly.ruleSetId) return { anomalyId, applied: false }; // idempotent — policy already applied
 
   const modality = anomaly.mediaAsset.ingestionSession.modality;
-  const rules = await prisma.ruleSet.findMany({
+  // The client's active policy for this modality (highest version wins; overrides fork the template).
+  const rule = await prisma.ruleSet.findFirst({
     where: { organizationId, targetModality: modality },
     orderBy: { version: "desc" },
     select: {
@@ -46,68 +52,69 @@ export async function classifyAnomaly(
       triggerMetric: true,
       operator: true,
       thresholdValue: true,
+      routeTargets: true,
       standardRef: true,
       standardVersion: true,
     },
   });
+  if (!rule) return { anomalyId, applied: false }; // no client policy → delivery uses the generic fallback
 
-  for (const rule of rules) {
-    const spec: RuleSpec = {
-      triggerMetric: rule.triggerMetric,
-      operator: rule.operator,
-      thresholdValue: rule.thresholdValue,
-      standardRef: rule.standardRef,
-      standardVersion: rule.standardVersion,
-    };
-    const result = classify(
-      {
-        metricDelta: anomaly.metricDelta,
-        metricUnit: anomaly.metricUnit,
-        confidenceScore: anomaly.confidenceScore,
-      },
-      spec,
-    );
-    if (result) {
-      await prisma.anomaly.update({
-        where: { id: anomaly.id },
-        data: {
-          standardRef: result.standardRef,
-          classification: result.classification,
-          recommendation: result.recommendation,
-          ruleSetId: rule.id,
-          // status is intentionally NOT touched — it stays PENDING_QA (CR-12).
-        },
-      });
-      return { anomalyId, classified: true, ruleSetId: rule.id, classification: result.classification };
-    }
-  }
-  return { anomalyId, classified: false };
+  const spec: PolicySpec = {
+    triggerMetric: rule.triggerMetric,
+    operator: rule.operator,
+    thresholdValue: rule.thresholdValue,
+    routeTargets: rule.routeTargets,
+    standardRef: rule.standardRef,
+    standardVersion: rule.standardVersion,
+  };
+  const result = applyPolicy(
+    {
+      classification: anomaly.classification,
+      metricDelta: anomaly.metricDelta,
+      metricUnit: anomaly.metricUnit,
+      confidenceScore: anomaly.confidenceScore,
+      standardRef: anomaly.standardRef,
+    },
+    spec,
+  );
+
+  await prisma.anomaly.update({
+    where: { id: anomaly.id },
+    data: {
+      priority: result.priority,
+      recommendation: result.recommendation,
+      ruleSetId: rule.id,
+      // classification / standardRef are the MODEL's authority — not written here.
+      // status is intentionally NOT touched — it stays PENDING_QA (CR-12).
+    },
+  });
+  return { anomalyId, applied: true, ruleSetId: rule.id, priority: result.priority };
 }
 
-export interface ClassifySummary {
+export interface PolicySummary {
   organizationId: string;
   considered: number;
-  classified: number;
-  results: ClassifyOutcome[];
+  applied: number;
+  results: PolicyOutcome[];
 }
 
-/** Classify every BOUND, not-yet-classified anomaly for one org. Unbound anomalies are skipped. */
-export async function classifyBoundAnomalies(organizationId: string): Promise<ClassifySummary> {
+/** Apply client policy to every BOUND, not-yet-policied anomaly for one org. Unbound are skipped. */
+export async function applyPolicyToBoundAnomalies(organizationId: string): Promise<PolicySummary> {
   const bound = await prisma.anomaly.findMany({
     where: {
       organizationId,
       spatialBindingStatus: SpatialBindingStatus.BOUND,
-      classification: null,
+      ruleSetId: null,
     },
     select: { id: true },
   });
 
-  const results: ClassifyOutcome[] = [];
-  let classified = 0;
+  const results: PolicyOutcome[] = [];
+  let applied = 0;
   for (const { id } of bound) {
-    const outcome = await classifyAnomaly(id, organizationId);
-    if (outcome.classified) classified += 1;
+    const outcome = await applyClientPolicy(id, organizationId);
+    if (outcome.applied) applied += 1;
     results.push(outcome);
   }
-  return { organizationId, considered: bound.length, classified, results };
+  return { organizationId, considered: bound.length, applied, results };
 }

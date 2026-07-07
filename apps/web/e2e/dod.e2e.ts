@@ -134,16 +134,21 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
     });
     await prisma.mediaAsset.create({ data: { id: MEDIA, ingestionSessionId: SESSION, fullStoragePath: "s3://datum-zero-dev/master/e2e.tif", capturedAt: new Date("2026-07-05T18:00:00Z") } });
 
-    // 2) INFERENCE — deterministic detector result posted to the real callback (M0-05).
-    //    The callback persists UNBOUND, then runs bind (M0-06) + classify (M0-07).
+    // 2) INFERENCE — real detector result (proposer + classifier + ΔT) posted to the callback (DET-1b/1c).
+    //    The callback persists the MODEL classification UNBOUND, then runs bind (M0-06) + client policy (DET-1c).
+    const MODEL_CLASSIFICATION = "IEC TS 62446-3 Cat 2 — Cell: single hot cell — investigate at next scheduled maintenance.";
     const detectionPayload = {
       ingestion_session_id: SESSION,
       organization_id: ORG,
-      model_version: "thermal-threshold-v0.1.0",
+      model_version: "thermal-classifier-v1",
       media_asset: { full_storage_path: "s3://datum-zero-dev/master/e2e.tif", captured_at: "2026-07-05T18:00:00Z" },
       detection: {
         confidence_score: 0.968, metric_delta: 18.4, metric_unit: "CELSIUS_DELTA",
         bounding_box: BBOX, latitude: LAT, longitude: LON, z_axis_offset: null,
+        // Model owns the type (CR-19): class + IEC category served through the callback (DET-1b).
+        class_label: "Cell", iec_category: 2, priority: "SCHEDULED",
+        classification: MODEL_CLASSIFICATION, standard_ref: "IEC TS 62446-3",
+        radiometric: true, delta_provisional: false,
         visual_crop_url: "s3://datum-zero-dev/v", analytics_crop_url: "s3://datum-zero-dev/a",
       },
     };
@@ -155,16 +160,21 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
     const cbRes = await inferenceCallback(cbReq);
     expect(cbRes.status).toBe(201);
 
-    const anomaly = await prisma.anomaly.findFirstOrThrow({ where: { mediaAssetId: MEDIA }, select: { id: true, spatialBindingStatus: true, assetId: true, classification: true, standardRef: true, ruleSetId: true, status: true, modelVersion: true } });
+    const anomaly = await prisma.anomaly.findFirstOrThrow({ where: { mediaAssetId: MEDIA }, select: { id: true, spatialBindingStatus: true, assetId: true, classification: true, standardRef: true, priority: true, recommendation: true, ruleSetId: true, status: true, modelVersion: true } });
 
     // 3) SPATIAL BIND (M0-06, CR-13)
     expect(anomaly.spatialBindingStatus).toBe(SpatialBindingStatus.BOUND);
     expect(anomaly.assetId).toBe(EXPECT_ASSET);
 
-    // 4) CLASSIFY (M0-07, CR-12/CR-15) — measurement layer only; status stays PENDING_QA
-    expect(anomaly.classification).toContain("IEC TS 62446-3");
+    // 4) CLASSIFY + POLICY (DET-1c, CR-12/CR-15 amend) — the MODEL owns the persisted classification
+    //    (CR-19); the RuleSet applies client POLICY → priority + routing + evidence-framed recommendation.
+    //    status stays PENDING_QA.
+    expect(anomaly.classification).toBe(MODEL_CLASSIFICATION); // persisted verbatim from the model payload
     expect(anomaly.standardRef).toBe("IEC TS 62446-3");
-    expect(anomaly.ruleSetId).toBeTruthy();
+    expect(anomaly.ruleSetId).toBeTruthy(); // client policy applied
+    expect(anomaly.priority).toBe("SCHEDULED"); // model Cat 2 + ΔT 18.4°C (< 2× the 10°C knob) → SCHEDULED
+    expect(anomaly.recommendation).toContain("Priority SCHEDULED");
+    expect(anomaly.recommendation).not.toMatch(VERDICT); // evidence-framed
     expect(anomaly.status).toBe(QueueStatus.PENDING_QA);
 
     // 5) QA APPROVE (M0-08, CR-12) — 100% human gate; approval fans out via the guarded outbox
@@ -174,7 +184,8 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
     expect(approved.reviewedById).toBe(REVIEWER);
     expect(approved.reviewedAt).toBeTruthy();
 
-    // 6) DISPATCH FAN-OUT (M0-09 webhook + M0-10 Jira) — both mocked, delivered via BullMQ
+    // 6) DISPATCH FAN-OUT — routing is client POLICY (DET-1c): the RuleSet.routeTargets
+    //    ["GENERIC_WEBHOOK","NATIVE_JIRA"] select exactly these two active integrations. Both mocked, via BullMQ.
     await poll(async () => (await prisma.workOrderDispatch.count({ where: { anomalyId: anomaly.id, isResolved: true } })) === 2);
     const dispatches = await prisma.workOrderDispatch.findMany({
       where: { anomalyId: anomaly.id },
@@ -210,7 +221,7 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
       expect(chain, `provenance for ${d.id}`).not.toBeNull();
       if (!chain) continue;
       expect(chain.source.imagePath).toBe("s3://datum-zero-dev/master/e2e.tif");
-      expect(chain.detection.modelVersion).toBe("thermal-threshold-v0.1.0");
+      expect(chain.detection.modelVersion).toBe("thermal-classifier-v1");
       // Provenance surfaces the raw stored confidence (0..1); the work-order payload presents 0..100.
       expect(chain.detection.confidenceScore).toBeCloseTo(0.968, 3);
       expect(chain.asset?.internalLabel).toBe(EXPECT_LABEL);

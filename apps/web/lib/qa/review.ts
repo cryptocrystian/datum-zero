@@ -1,5 +1,5 @@
 import { prisma, QueueStatus, SpatialBindingStatus } from "@dz/db";
-import { classifyAnomaly } from "../rules/classify";
+import { applyClientPolicy } from "../rules/classify";
 import { dispatchAnomaly } from "../outbox/dispatch";
 
 /**
@@ -19,6 +19,7 @@ export interface QueueItemDTO {
   metricDelta: number;
   metricUnit: string | null;
   classification: string | null;
+  priority: string | null;
   recommendation: string | null;
   standardRef: string | null;
   modelVersion: string | null;
@@ -61,6 +62,7 @@ export async function listReviewQueue(organizationId: string): Promise<QueueItem
       metricDelta: true,
       metricUnit: true,
       classification: true,
+      priority: true,
       recommendation: true,
       standardRef: true,
       modelVersion: true,
@@ -84,6 +86,7 @@ export async function listReviewQueue(organizationId: string): Promise<QueueItem
     metricDelta: r.metricDelta,
     metricUnit: r.metricUnit,
     classification: r.classification,
+    priority: r.priority,
     recommendation: r.recommendation,
     standardRef: r.standardRef,
     modelVersion: r.modelVersion,
@@ -176,6 +179,6 @@ export async function bindAnomalyToAsset(anomalyId: string, organizationId: stri
     where: { id: anomalyId },
     data: { assetId, spatialBindingStatus: SpatialBindingStatus.BOUND },
   });
-  // Now that it is bound, run measurement-layer classification (M0-07). status stays PENDING_QA.
-  await classifyAnomaly(anomalyId, organizationId);
+  // Now that it is bound, apply the client RuleSet POLICY (DET-1c). status stays PENDING_QA.
+  await applyClientPolicy(anomalyId, organizationId);
 }

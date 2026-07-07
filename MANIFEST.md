@@ -1,7 +1,8 @@
 # Datum Zero Systems — Core System Manifest
 
-**Version:** 1.3.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
+**Version:** 1.4.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
 
+> **Changelog — 1.4.0:** DET-1c amends CR-15 — the RuleSet role evolves from "classification-type spine (ΔT thresholds)" → "client-policy spine." The learned model (CR-19) OWNS the anomaly type: the classification is served through the inference callback and persisted as the authority (`standardRef` + `classification`); the RuleSet applies the client's configurable POLICY over it → `priority` (combine class + ΔT) + `routeTargets` + evidence-framed `recommendation`. Standards still anchor the measurement layer; the 100% human QA gate is unchanged (CR-12). No commandment change.
 > **Changelog — 1.3.0:** DET-1a supersedes CR-19's ΔT-cutoff *method* with a learned MobileNetV3-small classifier + a class→IEC TS 62446-3 map (`docs/DETECTOR-RESEARCH.md`); the category assignments remain provisional (CR-19 stays 🔎). No commandment change.
 > **Changelog — 1.2.0:** index CR-18 (marketing-copy posture), CR-19 (provisional classification thresholds), and CR-20 (real auth + sessions) in §9. No commandment change.
 > **Changelog — 1.1.0:** index CR-16 (unbound-anomaly / `spatialBindingStatus`) and CR-17 (canonical asset labels) in §9. No commandment change.
@@ -120,11 +121,15 @@ Full schema: [`packages/db/prisma/schema.prisma`](./packages/db/prisma/schema.pr
 - **Asset registry spine.** `Asset.internalLabel` is canonical. `cadObjectId` / `erpAssetId` /
   `procoreLocationId` are **nullable, incrementally-populated** attributes. `latitude/longitude` +
   `geoBoundary` power the **spatial auto-binding** join. *(CR-13)*
-- **`Anomaly` is an evidence record.** It carries the measurement layer (`standardRef`, `classification`,
-  `confidenceScore`, `metricDelta`) and the adjudication boundary (`recommendation`, `status`) plus an
-  **audit trail** (`modelVersion`, `reviewedById`, `reviewedAt`). *(CR-12, CR-15)*
-- **`RuleSet` is a versioned, standards-anchored template.** `standardRef` + `standardVersion` +
-  `isTemplate` + `version`; client overrides fork from the shipped default. *(CR-15)*
+- **`Anomaly` is an evidence record.** The measurement + classification layer is the MODEL's authority
+  (`standardRef`, `classification` — assigned by the learned detector, persisted at the callback; CR-19),
+  alongside `confidenceScore`, `metricDelta`. The adjudication boundary carries the client-policy outputs
+  (`priority`, `recommendation`, `ruleSetId`, `status`) plus an **audit trail** (`modelVersion`,
+  `reviewedById`, `reviewedAt`). *(CR-12, CR-15, CR-19)*
+- **`RuleSet` is a versioned, standards-anchored CLIENT-POLICY template.** `standardRef` + `standardVersion`
+  + `isTemplate` + `version` + `routeTargets`; client overrides fork from the shipped default. It no longer
+  derives the anomaly TYPE (the model owns that, CR-19) — it applies the client's policy over the model
+  classification: `priority` (combine class + ΔT), routing, and the evidence-framed recommendation. *(CR-15 amend)*
 - **Insurance is a proof record, not a transaction.** `PilotInsurance` verifies coverage
   (`isVerified`, `verificationSource`, profile flags: `hasBlanketAI`, `hasPrimaryNonContrib`,
   `hasWaiverOfSubrogation`). `ClientContract` carries the **required profile**. Missions gate on
@@ -159,12 +164,15 @@ The suite makes us universally compatible on day one. Contract:
 
 - Ship **default RuleSet templates grounded in published standards** so no third party is needed to
   define what an anomaly is. *(CR-15)*
-  - **Solar (beachhead): IEC TS 62446-3** — the standard's thermal-abnormality **matrix** drives the
-    `classification`; it is a *detection/classification methodology (a guideline)*, **not** a contractual
-    pass/fail. It lives in the **measurement** layer.
+  - **Solar (beachhead): IEC TS 62446-3** — the standard's thermal-abnormality **matrix** anchors the
+    `classification`, which the **learned model** assigns (CR-19) and the callback persists; it is a
+    *detection/classification methodology (a guideline)*, **not** a contractual pass/fail. It lives in the
+    **measurement** layer.
   - **Civil/concrete (Phase 2): ACI 117** (primary tolerance spec); **ASTM E1155** for floor flatness only.
-- Standards define **how we classify**; the **client adjudicates the consequence.** *(CR-12)*
-- Defaults are **versioned templates**; a client's contract can override thresholds. Store
+- Standards define **how we classify** (the model, anchored to the standard); the **RuleSet is the client's
+  POLICY** over that classification — `priority` (combine class + ΔT, escalate high-ΔT), `routeTargets`, and
+  the evidence-framed recommendation — and the **client adjudicates the consequence.** *(CR-12, CR-15 amend, CR-19)*
+- Defaults are **versioned templates**; a client's contract can override the policy (thresholds/routing). Store
   `standardRef` + `standardVersion` for auditability.
 
 ---
