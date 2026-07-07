@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
 import { getSession } from "@/lib/session";
 
@@ -28,17 +29,32 @@ export default async function SignInPage({
           Check your email for the sign-in link. (Dev: the link is printed to the server log.)
         </p>
       ) : null}
-      {sp.error ? (
-        <p className="rounded-sm border border-tactical-red px-4 py-3 font-mono text-xs text-tactical-red">
-          Sign-in unavailable for that address — accounts are provisioned by Datum Zero.
+      {sp.error === "denied" ? (
+        <p className="rounded-sm border border-tactical-red px-4 py-3 font-mono text-xs leading-relaxed text-tactical-red">
+          That address isn&apos;t provisioned for cockpit access. Accounts are set up by Datum Zero —
+          contact your administrator to be added.
+        </p>
+      ) : sp.error ? (
+        <p className="rounded-sm border border-tactical-red px-4 py-3 font-mono text-xs leading-relaxed text-tactical-red">
+          Sign-in couldn&apos;t be completed. Please try again, or contact Datum Zero if this persists.
         </p>
       ) : null}
 
       <form
         action={async (formData: FormData) => {
           "use server";
-          const email = String(formData.get("email") ?? "");
-          await signIn("nodemailer", { email, redirectTo: sp.callbackUrl ?? "/queue" });
+          const email = String(formData.get("email") ?? "").trim().toLowerCase();
+          try {
+            await signIn("nodemailer", { email, redirectTo: sp.callbackUrl ?? "/queue" });
+          } catch (error) {
+            // signIn throws a NEXT_REDIRECT on success (→ verify-request); let that propagate.
+            // An AuthError means the sign-in was refused (AccessDenied = un-provisioned email,
+            // CR-14). Fail closed to a friendly message instead of the raw Auth.js error page.
+            if (error instanceof AuthError) {
+              redirect(`/signin?error=${error.type === "AccessDenied" ? "denied" : "auth"}`);
+            }
+            throw error;
+          }
         }}
         className="flex flex-col gap-3"
       >
