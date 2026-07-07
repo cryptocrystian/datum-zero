@@ -1,0 +1,40 @@
+Datum Zero — thermal anomaly classifier (thermal-classifier-v1)
+================================================================
+
+This model was trained on the InfraredSolarModules dataset. Attribution below is required by the
+dataset's MIT license and provided as good practice for the associated publication.
+
+--------------------------------------------------------------------------------
+Training data: InfraredSolarModules — (c) 2020 Raptor Maps, Inc.
+Source: https://github.com/RaptorMaps/InfraredSolarModules
+License: MIT
+--------------------------------------------------------------------------------
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+Associated publication (citation):
+  Millendorf, M., Obropta, E., & Vadhavkar, N. (2020).
+  "Infrared Solar Module Dataset for Anomaly Detection."
+  ICLR 2020, AI for Earth Sciences Workshop.
+  https://github.com/RaptorMaps/InfraredSolarModules
+
+Model architecture:
+  torchvision MobileNetV3-Small (PyTorch, BSD-3-Clause), ImageNet-pretrained, fine-tuned by Datum
+  Zero for 12-class thermal anomaly classification and exported to ONNX. Served via onnxruntime.

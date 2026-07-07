@@ -1,0 +1,17 @@
+{
+  "labels": [
+    "Cell",
+    "Cell-Multi",
+    "Cracking",
+    "Diode",
+    "Diode-Multi",
+    "Hot-Spot",
+    "Hot-Spot-Multi",
+    "No-Anomaly",
+    "Offline-Module",
+    "Shadowing",
+    "Soiling",
+    "Vegetation"
+  ],
+  "img_size": 64
+}

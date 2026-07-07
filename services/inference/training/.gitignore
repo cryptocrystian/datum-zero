@@ -1,0 +1,5 @@
+# Raw dataset (fetched by prep_data.py — the 20k images are never committed). Samples/ IS committed.
+data/
+# training logs / scratch
+*.log
+__pycache__/

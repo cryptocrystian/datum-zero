@@ -18,7 +18,9 @@ build/
 __pycache__/
 *.pyc
 .venv/
+.venv-training/
 services/inference/.venv/
+services/inference/.venv-training/
 
 # prisma local
 /packages/db/prisma/*.db

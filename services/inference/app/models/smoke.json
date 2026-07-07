@@ -1,0 +1,5 @@
+{
+  "sample": "Cell/4845.jpg",
+  "expected_index": 0,
+  "expected_label": "Cell"
+}

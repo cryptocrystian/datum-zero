@@ -9,12 +9,38 @@ dependencies = [
     "pydantic>=2.7",
     "httpx>=0.27",
     "boto3>=1.34",
+    # Serving = lightweight ONNX inference. NO PyTorch at serve time (DET-1a).
+    "onnxruntime>=1.17",
+    "numpy>=1.26",
+    "pillow>=10.2",
+]
+
+[project.optional-dependencies]
+# TRAINING-ONLY extra — never installed for serving or in CI (which loads the committed ONNX only).
+# Install on the CPU torch index (see training/README.md). Keeping these out of the serving deps is
+# enforced by tests/guardrails/test_detector_model.py.
+training = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "onnx>=1.16",
+    "scikit-learn>=1.4",
 ]
 
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0",
 ]
+
+# Training-only torch/torchvision resolve from the CPU wheel index (no CUDA) for reproducible,
+# lightweight offline training. Serving never installs the [training] extra.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [build-system]
 requires = ["hatchling"]

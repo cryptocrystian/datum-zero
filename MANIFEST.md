@@ -1,7 +1,8 @@
 # Datum Zero Systems — Core System Manifest
 
-**Version:** 1.2.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
+**Version:** 1.3.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
 
+> **Changelog — 1.3.0:** DET-1a supersedes CR-19's ΔT-cutoff *method* with a learned MobileNetV3-small classifier + a class→IEC TS 62446-3 map (`docs/DETECTOR-RESEARCH.md`); the category assignments remain provisional (CR-19 stays 🔎). No commandment change.
 > **Changelog — 1.2.0:** index CR-18 (marketing-copy posture), CR-19 (provisional classification thresholds), and CR-20 (real auth + sessions) in §9. No commandment change.
 > **Changelog — 1.1.0:** index CR-16 (unbound-anomaly / `spatialBindingStatus`) and CR-17 (canonical asset labels) in §9. No commandment change.
 
