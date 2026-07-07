@@ -31,6 +31,10 @@ services/inference/.venv-training/
 # graphify (regenerated artifact)
 graphify-out/
 
+# per-machine agent / hook config (Claude Code settings + graphify hook paths) — stays local
+.claude/settings.json
+.claude/settings.local.json
+
 # misc
 .DS_Store
 *.log
