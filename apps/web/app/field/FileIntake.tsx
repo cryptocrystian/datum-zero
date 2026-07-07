@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-
-// A staged image — metadata only. No bytes are uploaded and no validation runs here (that is M1-05).
-type StagedFile = { name: string; size: number; type: string };
+import { useValidation } from "./useValidation";
+import { ValidationResults } from "./ValidationResults";
 
 const IMAGE_EXT = /\.(jpe?g|png|tiff?|dng|webp|heic|heif)$/i;
-function isImage(f: { name: string; type: string }): boolean {
+function isImage(f: File): boolean {
   return f.type.startsWith("image/") || IMAGE_EXT.test(f.name);
 }
 
@@ -38,23 +37,25 @@ async function walkDirectory(dir: FsHandle, out: File[]): Promise<void> {
 }
 
 export function FileIntake() {
-  const [files, setFiles] = useState<StagedFile[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
+  const { report, progress, running, run, reset } = useValidation();
 
   // <input webkitdirectory> isn't a typed React prop — set it imperatively.
   useEffect(() => {
     if (dirInputRef.current) dirInputRef.current.setAttribute("webkitdirectory", "");
   }, []);
 
-  function stage(incoming: Array<{ name: string; size: number; type: string }>) {
-    const imgs = incoming.filter(isImage).map((f) => ({ name: f.name, size: f.size, type: f.type }));
+  function stage(incoming: File[]) {
+    const imgs = incoming.filter(isImage);
     if (imgs.length === 0) {
       setNote("No images found in that selection.");
       return;
     }
+    reset();
     setFiles((prev) => {
       const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
       const merged = [...prev];
@@ -71,8 +72,7 @@ export function FileIntake() {
       try {
         setBusy(true);
         const handles = await w.showOpenFilePicker({ multiple: true });
-        const picked = await Promise.all(handles.map((h) => h.getFile()));
-        stage(picked);
+        stage(await Promise.all(handles.map((h) => h.getFile())));
       } catch (err) {
         if ((err as { name?: string })?.name !== "AbortError") filesInputRef.current?.click();
       } finally {
@@ -109,6 +109,7 @@ export function FileIntake() {
   }
 
   const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+  const pct = progress ? Math.round((progress.done / Math.max(1, progress.total)) * 100) : 0;
 
   return (
     <div className="flex flex-col gap-3">
@@ -119,7 +120,7 @@ export function FileIntake() {
       <div className="grid grid-cols-1 gap-3">
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || running}
           onClick={pickFolder}
           className="w-full rounded-sm border border-tactical-gold bg-datum-midnight px-4 py-4 font-mono text-sm uppercase tracking-wider text-white transition-colors duration-150 hover:bg-tactical-gold hover:text-datum-midnight disabled:opacity-40"
         >
@@ -127,7 +128,7 @@ export function FileIntake() {
         </button>
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || running}
           onClick={pickFiles}
           className="w-full rounded-sm border border-datum-slate/60 bg-datum-cardbg px-4 py-4 font-mono text-sm uppercase tracking-wider text-white transition-colors duration-150 hover:border-tactical-gold disabled:opacity-40"
         >
@@ -151,28 +152,50 @@ export function FileIntake() {
           No capture set staged
         </p>
       ) : (
-        <ul className="flex flex-col divide-y divide-datum-slate/15">
-          {files.map((f, i) => (
-            <li key={`${f.name}:${f.size}:${i}`} className="flex items-center justify-between gap-3 py-2.5">
-              <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-white">{f.name}</span>
-              <span className="shrink-0 font-mono text-[11px] text-datum-slate">{humanSize(f.size)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+        <>
+          {/* Run screening off the main thread (M1-05). Nothing is uploaded. */}
+          <button
+            type="button"
+            disabled={running}
+            onClick={() => run(files)}
+            className="w-full rounded-sm border border-tactical-gold bg-datum-midnight px-4 py-3.5 font-mono text-sm uppercase tracking-wider text-white transition-colors duration-150 hover:bg-tactical-gold hover:text-datum-midnight disabled:opacity-40"
+          >
+            {running ? `[ Screening… ${pct}% ]` : "[ Run Quality Screening ]"}
+          </button>
 
-      {files.length > 0 ? (
-        <button
-          type="button"
-          onClick={() => {
-            setFiles([]);
-            setNote(null);
-          }}
-          className="self-start font-mono text-[11px] uppercase tracking-wider text-datum-slate transition-colors hover:text-tactical-red"
-        >
-          [ Clear Set ]
-        </button>
-      ) : null}
+          {running && progress ? (
+            <div className="h-1 w-full overflow-hidden rounded-full bg-datum-slate/25">
+              <div className="h-full bg-tactical-gold transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          ) : null}
+
+          {report ? (
+            <ValidationResults report={report} />
+          ) : running ? null : (
+            <ul className="flex flex-col divide-y divide-datum-slate/15">
+              {files.map((f, i) => (
+                <li key={`${f.name}:${f.size}:${i}`} className="flex items-center justify-between gap-3 py-2.5">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-white">{f.name}</span>
+                  <span className="shrink-0 font-mono text-[11px] text-datum-slate">{humanSize(f.size)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            type="button"
+            disabled={running}
+            onClick={() => {
+              setFiles([]);
+              setNote(null);
+              reset();
+            }}
+            className="self-start font-mono text-[11px] uppercase tracking-wider text-datum-slate transition-colors hover:text-tactical-red disabled:opacity-40"
+          >
+            [ Clear Set ]
+          </button>
+        </>
+      )}
     </div>
   );
 }
