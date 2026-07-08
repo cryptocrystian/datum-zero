@@ -68,7 +68,7 @@ const ROUTES = [
   { href: "/dashboard", label: "Dashboard", enabled: false, Icon: DashboardIcon },
   { href: "/queue", label: "Validation Queue", enabled: true, Icon: QueueIcon },
   { href: "/policies", label: "RuleSet Policy", enabled: true, Icon: PolicyIcon },
-  { href: "/integrations", label: "Integrations", enabled: false, Icon: IntegrationsIcon },
+  { href: "/integrations", label: "Integrations", enabled: true, Icon: IntegrationsIcon },
   { href: "/registry", label: "Asset Registry", enabled: false, Icon: RegistryIcon },
   { href: "/admin", label: "Admin", enabled: false, Icon: AdminIcon },
 ];
