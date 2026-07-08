@@ -27,6 +27,15 @@ function QueueIcon({ className = ico }: IconProps) {
     </svg>
   );
 }
+function PolicyIcon({ className = ico }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" className={className} aria-hidden="true" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 1.5h7l3 3v10H3z" />
+      <path d="M9.5 1.5v3.5H13" />
+      <path d="M5.5 8.5h5M5.5 11h3.5" />
+    </svg>
+  );
+}
 function IntegrationsIcon({ className = ico }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" className={className} aria-hidden="true" strokeLinecap="round">
@@ -58,6 +67,7 @@ function AdminIcon({ className = ico }: IconProps) {
 const ROUTES = [
   { href: "/dashboard", label: "Dashboard", enabled: false, Icon: DashboardIcon },
   { href: "/queue", label: "Validation Queue", enabled: true, Icon: QueueIcon },
+  { href: "/policies", label: "RuleSet Policy", enabled: true, Icon: PolicyIcon },
   { href: "/integrations", label: "Integrations", enabled: false, Icon: IntegrationsIcon },
   { href: "/registry", label: "Asset Registry", enabled: false, Icon: RegistryIcon },
   { href: "/admin", label: "Admin", enabled: false, Icon: AdminIcon },
