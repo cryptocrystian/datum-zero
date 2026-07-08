@@ -10,18 +10,20 @@ export const dynamic = "force-dynamic";
  *
  * An on-site DATA-INTEGRITY + HARDWARE-SCREENING tool: it stages a capture set for validation. It
  * does NOT adjudicate outcomes (CR-12), and it makes no airframe-compliance or live-broadcast
- * claims — hardware verification is a server-side registry serial-match (CR-11). This ticket ships
- * the shell + client-side file intake only; validation logic is M1-05.
+ * claims — hardware verification is a server-side registry serial-match (CR-11). The full Validator
+ * arc is live (M1-04 shell + intake, M1-05 client validation, M1-06 hardware screening + fail-closed upload).
  */
 export default async function FieldPage() {
   const session = await getSession();
   const pilot = session?.name ?? session?.email ?? "Field Pilot";
 
+  // The full field sequence — all live. 01 is the entry on this screen; 02–04 run automatically on
+  // submit: client integrity screen (M1-05) → airframe serial-match (M1-06) → fail-closed hand-off.
   const steps = [
-    { n: "01", label: "Stage Capture Set", active: true },
-    { n: "02", label: "Screen Capture Integrity", active: false },
-    { n: "03", label: "Screen Airframe Hardware", active: false },
-    { n: "04", label: "Hand Off to Validation", active: false },
+    { n: "01", label: "Stage Capture Set", current: true },
+    { n: "02", label: "Screen Capture Integrity", current: false },
+    { n: "03", label: "Screen Airframe Hardware", current: false },
+    { n: "04", label: "Hand Off to Validation", current: false },
   ];
 
   return (
@@ -45,21 +47,21 @@ export default async function FieldPage() {
         </div>
       </header>
 
-      {/* Checklist stack — the field diagnostic sequence. Only step 01 is live this milestone. */}
+      {/* Checklist stack — the field diagnostic sequence. 01 is the entry; 02–04 run automatically. */}
       <ol className="flex flex-col gap-2">
         {steps.map((s) => (
           <li
             key={s.n}
             className={
               "flex items-center gap-3 rounded-sm border px-3 py-2.5 " +
-              (s.active
+              (s.current
                 ? "border-tactical-gold/60 bg-datum-cardbg"
-                : "border-datum-slate/20 bg-datum-cardbg/40")
+                : "border-datum-slate/25 bg-datum-cardbg/40")
             }
           >
             <span
               className={
-                "font-mono text-xs " + (s.active ? "text-tactical-gold" : "text-datum-slate")
+                "font-mono text-xs " + (s.current ? "text-tactical-gold" : "text-datum-slate")
               }
             >
               {s.n}
@@ -67,14 +69,14 @@ export default async function FieldPage() {
             <span
               className={
                 "font-mono text-[12px] uppercase tracking-wider " +
-                (s.active ? "text-white" : "text-datum-slate/70")
+                (s.current ? "text-white" : "text-white/70")
               }
             >
               {s.label}
             </span>
-            {!s.active ? (
-              <span className="ml-auto font-mono text-[9px] uppercase tracking-widest text-datum-slate/50">
-                Soon
+            {!s.current ? (
+              <span className="ml-auto font-mono text-[9px] uppercase tracking-widest text-datum-slate/60">
+                Auto
               </span>
             ) : null}
           </li>

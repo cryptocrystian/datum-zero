@@ -90,7 +90,7 @@ export function Sidebar({ user }: { user: { name: string | null; email: string |
       <div className="flex items-center gap-3 border-b border-datum-slate/20 px-5 py-5">
         <Insignia className="h-9 w-9 shrink-0" />
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-bold uppercase tracking-[0.2em] text-white">
+          <div className="text-[13px] font-bold uppercase leading-[1.15] tracking-[0.14em] text-white">
             Datum Zero Systems
           </div>
           <div className="mt-0.5 font-mono text-[10px] uppercase tracking-widest text-datum-slate">
@@ -133,15 +133,9 @@ export function Sidebar({ user }: { user: { name: string | null; email: string |
         })}
       </nav>
 
-      <div className="space-y-3 border-t border-datum-slate/20 px-5 py-4">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-status-green shadow-[0_0_6px_var(--color-status-green)]" />
-          <span className="font-mono text-[11px] uppercase tracking-wide text-datum-slate">
-            System Status: OK
-          </span>
-        </div>
-
-        <div className="border-t border-datum-slate/20 pt-3">
+      {/* System status lives once, in the top command bar. Sidebar footer = identity + sign out. */}
+      <div className="border-t border-datum-slate/20 px-5 py-4">
+        <div>
           <div className="truncate font-mono text-[11px] text-white">{user.name ?? user.email}</div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-datum-slate">{user.role}</div>
           <form action={signOutAction} className="mt-2">
