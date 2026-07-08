@@ -69,7 +69,7 @@ const ROUTES = [
   { href: "/queue", label: "Validation Queue", enabled: true, Icon: QueueIcon },
   { href: "/policies", label: "RuleSet Policy", enabled: true, Icon: PolicyIcon },
   { href: "/integrations", label: "Integrations", enabled: true, Icon: IntegrationsIcon },
-  { href: "/registry", label: "Asset Registry", enabled: false, Icon: RegistryIcon },
+  { href: "/registry", label: "Asset Registry", enabled: true, Icon: RegistryIcon },
   { href: "/admin", label: "Admin", enabled: false, Icon: AdminIcon },
 ];
 
