@@ -1,8 +1,15 @@
 import type { RenderContext } from "./types";
+import type { ActionPriority, UnifiedAnomalyPayload } from "./unified-envelope";
 
 /**
  * Render the canonical, evidence-framed work order (CR-12, CR-15). MEASUREMENT + RECOMMENDATION
  * only — never a verdict. Wire format is snake_case (MANIFEST §3).
+ *
+ * The AUTHORITATIVE renderer is `renderWorkOrderFromEnvelope`: it maps the single internal
+ * `UnifiedAnomalyPayload` (M2-PREP, CR-21) into `contracts/work-order.schema.json` via the §3.1
+ * mapping in docs/INTEGRATION-ADAPTER-ROADMAP.md. Native adapters render the SAME envelope into their
+ * own schema. `renderWorkOrder(ctx)` is the dispatch-time assembler that builds the envelope from an
+ * approved, BOUND anomaly and delegates — one renderer, one output contract, one internal object.
  */
 
 /** Generic evidence recommendation for a bound-but-unclassified anomaly — never null, never verdict. */
@@ -11,57 +18,126 @@ export function fallbackRecommendation(metricDelta: number, confidenceScore: num
   return `Measured ${sign}${metricDelta.toFixed(1)}°C delta vs. median at ${(confidenceScore * 100).toFixed(1)}% confidence; review recommended.`;
 }
 
-function priorityHint(metricDelta: number): "LOW" | "MEDIUM" | "HIGH" {
-  const t = Math.abs(metricDelta);
-  if (t >= 20) return "HIGH";
-  if (t >= 10) return "MEDIUM";
-  return "LOW";
-}
+// §3.1: findingData.priority → recommendation.priority_hint.
+const PRIORITY_HINT: Record<ActionPriority, "LOW" | "MEDIUM" | "HIGH"> = {
+  MONITOR: "LOW",
+  SCHEDULED: "MEDIUM",
+  PROMPT: "HIGH",
+};
 
-export function renderWorkOrder(ctx: RenderContext): Record<string, unknown> {
-  const a = ctx.anomaly;
-  // If no rule classified the anomaly (M0-07 found no match), emit a generic evidence recommendation.
-  const text = a.recommendation ?? fallbackRecommendation(a.metricDelta, a.confidenceScore);
+/**
+ * THE generic-adapter renderer: `UnifiedAnomalyPayload` → `work-order.schema.json` (§3.1 mapping).
+ * `targetHints` is deliberately ignored here — it is read only by native adapters.
+ */
+export function renderWorkOrderFromEnvelope(p: UnifiedAnomalyPayload): Record<string, unknown> {
+  // asset.external_ids: flatten externalSystemMappings + nest procoreLocationId (§3.1).
+  const externalIds: Record<string, string | number> = {};
+  for (const m of p.assetContext.externalSystemMappings ?? []) externalIds[m.targetPlatform] = m.externalId;
+  if (p.assetContext.procoreLocationId != null) externalIds.procore_location_id = p.assetContext.procoreLocationId;
 
   const asset: Record<string, unknown> = {
-    internal_label: ctx.asset.internalLabel,
-    latitude: ctx.asset.latitude,
-    longitude: ctx.asset.longitude,
+    internal_label: p.assetContext.internalLabel,
+    latitude: p.spatialReference.latitude,
+    longitude: p.spatialReference.longitude,
   };
-  if (ctx.asset.externalIds && Object.keys(ctx.asset.externalIds).length > 0) {
-    asset.external_ids = ctx.asset.externalIds;
-  }
+  if (Object.keys(externalIds).length > 0) asset.external_ids = externalIds;
+
+  const audit: Record<string, unknown> = {
+    captured_at: p.auditProvenance.capturedAt,
+    model_version: p.auditProvenance.modelVersion,
+    reviewed_by: p.auditProvenance.reviewedById,
+    reviewed_at: p.auditProvenance.reviewedAt,
+    ingestion_session_id: p.auditProvenance.ingestionSessionId ?? null,
+  };
+  if (p.auditProvenance.ndaaVerified !== undefined) audit.ndaa_verified = p.auditProvenance.ndaaVerified;
 
   return {
     schema_version: "1.0",
-    work_order_id: ctx.dispatchId,
-    idempotency_key: ctx.idempotencyKey,
-    organization_id: ctx.organizationId,
-    emitted_at: ctx.emittedAt,
+    work_order_id: p.systemHeaders.datumZeroId,
+    idempotency_key: p.systemHeaders.idempotencyKey,
+    organization_id: p.systemHeaders.organizationId,
+    emitted_at: p.systemHeaders.timestamp,
     asset,
     finding: {
-      modality: ctx.capture.modality,
-      standard_ref: a.standardRef,
-      classification: a.classification,
-      metric_delta: a.metricDelta,
-      metric_unit: a.metricUnit,
-      confidence_score: Math.round(a.confidenceScore * 1000) / 10, // 0..1 → 0..100 (1dp)
-      bounding_box: a.boundingBox.length === 4 ? a.boundingBox : null,
-      visual_crop_url: a.visualCropUrl,
-      analytics_crop_url: a.analyticsCropUrl,
+      modality: p.findingData.modality,
+      standard_ref: p.findingData.standardRef ?? null,
+      classification: p.findingData.classification ?? null,
+      metric_delta: p.findingData.metricDeltaValue,
+      metric_unit: p.findingData.metricUnit,
+      confidence_score: p.findingData.confidenceScore, // envelope already 0..100
+      bounding_box: p.findingData.boundingBox ?? null,
+      visual_crop_url: p.findingData.visualCropUrl,
+      analytics_crop_url: p.findingData.analyticsCropUrl,
     },
     recommendation: {
-      text,
-      recommended_action: "REVIEW",
-      priority_hint: priorityHint(a.metricDelta),
+      text: p.findingData.evidenceSummary,
+      recommended_action: p.findingData.recommendedAction,
+      priority_hint: PRIORITY_HINT[p.findingData.priority],
     },
-    audit: {
-      captured_at: ctx.capture.capturedAt,
-      model_version: a.modelVersion ?? "unknown",
-      reviewed_by: a.reviewedById,
-      reviewed_at: a.reviewedAt,
-      ingestion_session_id: ctx.capture.ingestionSessionId,
-      ndaa_verified: ctx.capture.ndaaVerified,
+    audit,
+  };
+}
+
+/** Assemble the internal envelope from an approved, BOUND anomaly context (dispatch-time input). */
+export function contextToEnvelope(ctx: RenderContext): UnifiedAnomalyPayload {
+  const a = ctx.anomaly;
+
+  // ctx.asset.externalIds (object) → envelope: procore_location_id gets its dedicated slot; every
+  // other external id rides in externalSystemMappings keyed by platform. Round-trips 1:1 (§3.1).
+  const mappings: { targetPlatform: string; externalId: string }[] = [];
+  let procoreLocationId: number | undefined;
+  for (const [k, v] of Object.entries(ctx.asset.externalIds ?? {})) {
+    if (k === "procore_location_id") procoreLocationId = Number(v);
+    else mappings.push({ targetPlatform: k, externalId: String(v) });
+  }
+
+  const d = a.metricDelta;
+  const priority: ActionPriority = Math.abs(d) >= 20 ? "PROMPT" : Math.abs(d) >= 10 ? "SCHEDULED" : "MONITOR";
+
+  return {
+    systemHeaders: {
+      datumZeroId: ctx.dispatchId,
+      organizationId: ctx.organizationId,
+      idempotencyKey: ctx.idempotencyKey,
+      timestamp: ctx.emittedAt,
+    },
+    assetContext: {
+      internalLabel: ctx.asset.internalLabel,
+      ...(procoreLocationId !== undefined ? { procoreLocationId } : {}),
+      ...(mappings.length > 0 ? { externalSystemMappings: mappings } : {}),
+    },
+    spatialReference: {
+      // Registry asset coords. A dispatched anomaly is spatially resolved, but the output contract
+      // permits null, so we forward the value as-is (may be null at runtime) rather than fabricate 0,0.
+      latitude: ctx.asset.latitude as number,
+      longitude: ctx.asset.longitude as number,
+    },
+    findingData: {
+      modality: ctx.capture.modality as UnifiedAnomalyPayload["findingData"]["modality"],
+      standardRef: a.standardRef,
+      classification: a.classification,
+      confidenceScore: Math.round(a.confidenceScore * 1000) / 10, // 0..1 → 0..100 (1dp)
+      metricDeltaValue: a.metricDelta,
+      metricUnit: (a.metricUnit as UnifiedAnomalyPayload["findingData"]["metricUnit"]) ?? "CELSIUS_DELTA",
+      boundingBox: a.boundingBox.length === 4 ? (a.boundingBox as [number, number, number, number]) : null,
+      priority,
+      recommendedAction: "REVIEW",
+      evidenceSummary: a.recommendation ?? fallbackRecommendation(a.metricDelta, a.confidenceScore),
+      visualCropUrl: a.visualCropUrl,
+      analyticsCropUrl: a.analyticsCropUrl,
+    },
+    auditProvenance: {
+      capturedAt: ctx.capture.capturedAt,
+      modelVersion: a.modelVersion ?? "unknown",
+      reviewedById: a.reviewedById,
+      reviewedAt: a.reviewedAt,
+      ingestionSessionId: ctx.capture.ingestionSessionId,
+      ndaaVerified: ctx.capture.ndaaVerified,
     },
   };
+}
+
+/** Dispatch-time render: assemble the canonical envelope, then render the output contract from it. */
+export function renderWorkOrder(ctx: RenderContext): Record<string, unknown> {
+  return renderWorkOrderFromEnvelope(contextToEnvelope(ctx));
 }
