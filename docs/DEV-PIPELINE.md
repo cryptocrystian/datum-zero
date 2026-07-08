@@ -26,6 +26,8 @@ Documentation describes rules; **CI enforces them.** See `tests/guardrails/` + `
   same commit** and bump `MANIFEST.md`. Never let code and manifest diverge.
 - **Conventional commits** reference ticket + CR: `feat(adapters): generic webhook renderer (M0-09, CR-12)`.
 - **Green CI is the merge gate.**
+- **Migrations are immutable once committed/applied.** Never edit an existing migration — it breaks
+  the Prisma checksum (the M1-04 drift incident); any schema change lands in a NEW migration.
 
 ## Local dev infrastructure
 The runtime needs **Postgres + Redis** (MinIO/S3 is optional — the e2e uses fixture crop URLs).

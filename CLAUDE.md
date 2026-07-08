@@ -33,5 +33,7 @@ The full architecture is in [`MANIFEST.md`](./MANIFEST.md); the *why* is in
 ## Commit / thread hygiene
 - Conventional commits referencing the ticket + CR, e.g. `feat(adapters): generic webhook renderer (M0-09, CR-12)`.
 - Green CI is the gate. The manifest-compliance suite (`tests/guardrails/`) must pass.
+- **Migrations are immutable once committed/applied.** Never edit an existing migration file — it
+  breaks the Prisma checksum (the M1-04 drift incident). Any schema change goes in a NEW migration.
 - Context/memory retrieval: `graphify` (from M1) is a *map* of the code — it does NOT enforce these
   rules. This file and CI do.
