@@ -29,6 +29,18 @@ export function conciergeAdapter(): Adapter {
 }
 
 /**
+ * Sign-in eligibility (CR-14/CR-20, OPS-4). A magic-link sign-in is allowed ONLY for an email that is
+ * concierge-provisioned AND active. Deactivating a user (OPS-4) flips `isActive` false and this denies
+ * their next sign-in — no self-serve signup, no reactivation except by an ADMIN. Extracted so it is
+ * testable without booting NextAuth (the signIn callback delegates here).
+ */
+export async function isEligibleForSignIn(email: string | null | undefined): Promise<boolean> {
+  if (!email) return false;
+  const u = await prisma.user.findUnique({ where: { email }, select: { isActive: true } });
+  return Boolean(u && u.isActive);
+}
+
+/**
  * Copy the DB user's tenant + role onto the session (database strategy). Role-agnostic: every
  * provisioned role (ADMIN, REVIEWER, PILOT) enriches identically — no role can special-case its way
  * into breaking sign-in.

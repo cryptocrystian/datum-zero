@@ -1,7 +1,6 @@
 import NextAuth from "next-auth";
 import Nodemailer from "next-auth/providers/nodemailer";
-import { prisma } from "@dz/db";
-import { conciergeAdapter, enrichSession } from "@/lib/auth-core";
+import { conciergeAdapter, enrichSession, isEligibleForSignIn } from "@/lib/auth-core";
 
 /**
  * M1-01 — real authentication (CR-20). Auth.js v5, email magic-link (no passwords), database
@@ -47,11 +46,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    // Defense-in-depth: deny sign-in for any email not provisioned by the concierge seed.
+    // Deny sign-in for any email not concierge-provisioned OR deactivated (OPS-4, CR-14).
     async signIn({ user }) {
-      if (!user?.email) return false;
-      const exists = await prisma.user.findUnique({ where: { email: user.email }, select: { id: true } });
-      return Boolean(exists);
+      return isEligibleForSignIn(user?.email);
     },
     // Enrich the session with tenant + role (database strategy passes the DB user).
     session({ session, user }) {

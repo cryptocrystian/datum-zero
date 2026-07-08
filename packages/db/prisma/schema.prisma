@@ -68,6 +68,9 @@ model User {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   role           UserRole     @default(REVIEWER)
+  // Concierge deactivation (CR-14, OPS-4): an ADMIN can retire a user without deleting the audit
+  // trail. Deactivated users are denied at the signIn callback. Defaults active.
+  isActive       Boolean      @default(true)
 
   accounts       Account[]
   sessions       Session[]

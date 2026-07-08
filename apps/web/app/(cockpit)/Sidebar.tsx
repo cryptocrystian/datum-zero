@@ -54,6 +54,15 @@ function RegistryIcon({ className = ico }: IconProps) {
     </svg>
   );
 }
+function UsersIcon({ className = ico }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" className={className} aria-hidden="true" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="5" r="2.5" />
+      <path d="M1.5 13.5c0-2.2 2-3.5 4.5-3.5s4.5 1.3 4.5 3.5" />
+      <path d="M11 3.2a2.3 2.3 0 010 4.1M12 10.2c1.7.4 2.8 1.5 2.8 3.3" />
+    </svg>
+  );
+}
 function AdminIcon({ className = ico }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" className={className} aria-hidden="true" strokeLinejoin="round">
@@ -70,6 +79,7 @@ const ROUTES = [
   { href: "/policies", label: "RuleSet Policy", enabled: true, Icon: PolicyIcon },
   { href: "/integrations", label: "Integrations", enabled: true, Icon: IntegrationsIcon },
   { href: "/registry", label: "Asset Registry", enabled: true, Icon: RegistryIcon },
+  { href: "/users", label: "Users", enabled: true, adminOnly: true, Icon: UsersIcon },
   { href: "/admin", label: "Admin", enabled: false, Icon: AdminIcon },
 ];
 
@@ -90,7 +100,7 @@ export function Sidebar({ user }: { user: { name: string | null; email: string |
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {ROUTES.map((r) => {
+        {ROUTES.filter((r) => user.role === "ADMIN" || !(r as { adminOnly?: boolean }).adminOnly).map((r) => {
           const active = pathname === r.href;
           const Icon = r.Icon;
           if (!r.enabled) {
