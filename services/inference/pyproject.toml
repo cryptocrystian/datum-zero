@@ -29,6 +29,7 @@ training = [
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0",
+    "jsonschema>=4.0",
 ]
 
 # Training-only torch/torchvision resolve from the CPU wheel index (no CUDA) for reproducible,

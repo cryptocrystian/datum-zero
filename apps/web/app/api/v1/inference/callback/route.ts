@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { prisma, runWithOrg, SpatialBindingStatus } from "@dz/db";
 import { bindUnboundAnomalies } from "@/lib/binding/spatial-binding";
 import { applyPolicyToBoundAnomalies } from "@/lib/rules/classify";
+import { validateInferenceCallback } from "@dz/adapters";
 
 // Needs Node APIs (crypto, Prisma) — not the edge runtime.
 export const runtime = "nodejs";
@@ -53,6 +54,14 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") return badRequest("expected a JSON body");
+
+  // Pin the contract (packages/adapters/contracts/inference-callback.schema.json): validate the
+  // inbound payload before any DB work — fail closed on a malformed/renamed field (CR-12).
+  try {
+    validateInferenceCallback(body);
+  } catch (e) {
+    return badRequest(e instanceof Error ? e.message : "payload failed contract validation");
+  }
 
   const ingestionSessionId = String(body.ingestion_session_id ?? "").trim();
   const organizationId = String(body.organization_id ?? "").trim();

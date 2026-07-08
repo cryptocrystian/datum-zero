@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://datumzero.systems/contracts/inference-callback.schema.json",
+  "title": "Datum Zero — inference→web callback payload (v1)",
+  "description": "The canonical INBOUND contract from the FastAPI inference pipeline (services/inference/app/pipeline.py build_callback_payload) to the Next.js callback (apps/web/app/api/v1/inference/callback/route.ts). snake_case on the wire (MANIFEST §3). This seam has no code-level edge between the two services, so it is pinned here: both sides validate against this file, and a field rename on either side fails a test rather than production. The callback fails closed on any payload that does not validate.",
+  "type": "object",
+  "required": ["ingestion_session_id", "organization_id", "model_version", "media_asset", "detection"],
+  "additionalProperties": false,
+  "properties": {
+    "ingestion_session_id": { "type": "string", "minLength": 1 },
+    "organization_id": { "type": "string", "minLength": 1 },
+    "model_version": { "type": "string", "minLength": 1 },
+    "media_asset": {
+      "type": "object",
+      "required": ["full_storage_path"],
+      "additionalProperties": false,
+      "properties": {
+        "full_storage_path": { "type": "string", "minLength": 1 },
+        "captured_at": { "type": ["string", "null"] }
+      }
+    },
+    "detection": {
+      "type": "object",
+      "description": "Measurement/evidence + the standards classification the model raises (DET-1b/1c). No verdict language (CR-12).",
+      "required": [
+        "confidence_score",
+        "metric_delta",
+        "bounding_box",
+        "classification",
+        "standard_ref",
+        "visual_crop_url",
+        "analytics_crop_url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "confidence_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "metric_delta": { "type": "number" },
+        "metric_unit": { "type": ["string", "null"] },
+        "bounding_box": {
+          "type": "array",
+          "description": "[x1,y1,x2,y2] pixel box within the MediaAsset.",
+          "items": { "type": "integer" },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "class_label": { "type": "string" },
+        "iec_category": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "priority": { "type": "string" },
+        "classification": { "type": "string", "minLength": 1 },
+        "standard_ref": { "type": "string", "minLength": 1 },
+        "radiometric": { "type": "boolean" },
+        "delta_provisional": { "type": "boolean" },
+        "latitude": { "type": ["string", "null"] },
+        "longitude": { "type": ["string", "null"] },
+        "z_axis_offset": { "type": ["number", "null"] },
+        "visual_crop_url": { "type": "string", "minLength": 1 },
+        "analytics_crop_url": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
