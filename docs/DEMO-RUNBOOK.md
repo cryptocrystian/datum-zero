@@ -8,13 +8,17 @@ external HTTP target is mocked, so this runs with **no live Jira/webhook** and n
 > Redis service containers). This runbook is the human walkthrough.
 
 ## Prerequisites
-- Docker, Node 20, pnpm (via `corepack enable`), and (for the inference service) `uv`.
-- `cp .env.example .env` (dev defaults already point at the local Postgres/Redis/MinIO).
+- Node 20, pnpm (via `corepack enable`), and (for the inference service) `uv`.
+- **Postgres 16 + Redis.** Default local path: run them as **native systemd services** (Postgres on
+  `localhost:5432`, stock `redis-server`), `enable`d so they're always up — no Docker needed. The
+  container alternative is `docker-compose.yml` (Postgres + Redis + MinIO), which is also what CI runs.
+- `cp .env.example .env` (dev defaults point at `localhost:5432` / Redis, which both paths satisfy).
 
 ## 1. Infra + schema + seed (~30s)
 ```bash
-pnpm infra:up                 # Postgres + Redis + MinIO (docker compose)
-pnpm --filter @dz/db exec prisma migrate deploy
+# Native path (default): Postgres + Redis are systemd services — nothing to start.
+# Container alternative (only if not running native services):  pnpm infra:up   # docker compose up -d
+pnpm --filter @dz/db exec prisma migrate deploy   # runs as the dz superuser via directUrl (CR-20)
 pnpm db:seed                  # 1 org · assets grid · IEC 62446-3 RuleSet · webhook + Jira integrations · verified airframe
 ```
 

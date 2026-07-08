@@ -27,6 +27,21 @@ Documentation describes rules; **CI enforces them.** See `tests/guardrails/` + `
 - **Conventional commits** reference ticket + CR: `feat(adapters): generic webhook renderer (M0-09, CR-12)`.
 - **Green CI is the merge gate.**
 
+## Local dev infrastructure
+The runtime needs **Postgres + Redis** (MinIO/S3 is optional — the e2e uses fixture crop URLs).
+- **Default local path — native services (no Docker).** Postgres 16 + Redis run as **systemd services**
+  inside WSL/Linux, both `enable`d so they survive reboots (never "DB down" mid-thread). Postgres
+  listens on `localhost:5432` to match `.env`'s `DATABASE_URL`. Redis is the stock `redis-server` unit.
+- **Dual-role for RLS (CR-20), same on native as in containers:** migrations + seed run as the
+  **`dz` superuser** (BYPASSRLS) via `directUrl`; the app/worker/e2e connect as the least-privilege
+  **`datumzero_app`** (non-superuser, non-BYPASSRLS) so Postgres RLS scopes every tenant query. The
+  `datumzero_app` role + grants are created by the `m1_02_rls` migration (idempotent); local bootstrap
+  only creates the `dz` superuser + `datum_zero` DB.
+- **Container alternative (CI / prod-parity):** `docker-compose.yml` is the canonical stack CI runs
+  against (Postgres + Redis + MinIO service containers) and stays the reference for prod parity. Bring
+  it up with `pnpm infra:up` **only** if you are not running the native services. `pnpm infra:up` is
+  **not** needed on the native local path.
+
 ## Retrieval aid — Graphify (from M1, not M0)
 A queryable knowledge-graph "memory layer" over the repo. **Descriptive, not prescriptive** — it maps
 what exists so threads stop grep-and-missing; it does **not** enforce any rule (that's Layers 1–2).
