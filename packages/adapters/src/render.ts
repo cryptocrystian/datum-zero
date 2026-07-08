@@ -107,10 +107,10 @@ export function contextToEnvelope(ctx: RenderContext): UnifiedAnomalyPayload {
       ...(mappings.length > 0 ? { externalSystemMappings: mappings } : {}),
     },
     spatialReference: {
-      // Registry asset coords. A dispatched anomaly is spatially resolved, but the output contract
-      // permits null, so we forward the value as-is (may be null at runtime) rather than fabricate 0,0.
-      latitude: ctx.asset.latitude as number,
-      longitude: ctx.asset.longitude as number,
+      // Registry asset coords, forwarded as-is (nullable). The output contract permits null, so a
+      // coordless asset emits null rather than a fabricated 0,0.
+      latitude: ctx.asset.latitude,
+      longitude: ctx.asset.longitude,
     },
     findingData: {
       modality: ctx.capture.modality as UnifiedAnomalyPayload["findingData"]["modality"],

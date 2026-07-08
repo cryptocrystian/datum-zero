@@ -79,8 +79,8 @@ export interface UnifiedAnomalyPayload {
     }[];
   };
   spatialReference: {
-    latitude: number;                     // 6-decimal precision
-    longitude: number;                    // 6-decimal precision
+    latitude: number | null;                     // 6-decimal precision
+    longitude: number | null;                    // 6-decimal precision
     elevationOffset?: number;             // Z-axis in meters (enterprise; via targetHints downstream)
     projectionPolygon?: string;           // GeoJSON geometry string (enterprise)
   };

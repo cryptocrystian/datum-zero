@@ -83,4 +83,15 @@ describe("UnifiedAnomalyPayload → work-order.schema.json (the reconciled singl
     expect(isValidWorkOrder(out)).toBe(true);
     expect(out.asset.external_ids).toBeUndefined(); // omitted when empty
   });
+
+  it("a coordless asset emits null coords (never 0,0) and still validates", () => {
+    const e = envelope();
+    e.spatialReference.latitude = null;
+    e.spatialReference.longitude = null;
+    const out = renderWorkOrderFromEnvelope(e) as any;
+    expect(out.asset.latitude).toBeNull();
+    expect(out.asset.longitude).toBeNull();
+    expect(out.asset.latitude).not.toBe(0);
+    expect(isValidWorkOrder(out)).toBe(true);
+  });
 });
