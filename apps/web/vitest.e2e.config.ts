@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 const appDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  // Components (Next.js) use the automatic JSX runtime — required to renderToStaticMarkup in e2e.
+  esbuild: { jsx: "automatic" },
   resolve: { alias: { "@": appDir } },
   test: {
     environment: "node",

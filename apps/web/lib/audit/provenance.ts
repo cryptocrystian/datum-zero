@@ -28,6 +28,7 @@ export interface ProvenanceRow {
     metricDelta: number;
     metricUnit: string | null;
     modelVersion: string | null;
+    detectedFormat: string | null;
     classification: string | null;
     standardRef: string | null;
     recommendation: string | null;
@@ -78,6 +79,7 @@ export interface ProvenanceChain {
     imagePath: string;
     ingestionSessionId: string;
     modality: string;
+    detectedFormat: string | null;
     ndaaVerified: boolean;
     boundHardwareId: string | null;
     visualCropUrl: string;
@@ -138,6 +140,7 @@ export function toProvenance(row: ProvenanceRow): ProvenanceChain {
       imagePath: m.fullStoragePath,
       ingestionSessionId: m.ingestionSession.id,
       modality: m.ingestionSession.modality,
+      detectedFormat: a.detectedFormat,
       ndaaVerified: m.ingestionSession.isNdaaVerified,
       boundHardwareId: m.ingestionSession.boundHardwareId,
       visualCropUrl: a.visualCropUrl,
@@ -198,6 +201,7 @@ const CHAIN_SELECT = {
       metricDelta: true,
       metricUnit: true,
       modelVersion: true,
+      detectedFormat: true,
       classification: true,
       standardRef: true,
       recommendation: true,

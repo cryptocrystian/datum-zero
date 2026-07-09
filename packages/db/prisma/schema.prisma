@@ -243,6 +243,7 @@ model Anomaly {
   confidenceScore  Float
   metricDelta      Float // e.g. °C delta
   metricUnit       String? // e.g. "CELSIUS_DELTA"
+  detectedFormat   String? // M2-1e/CR-27: sniffed radiometric format for audit provenance (FLIR_RJPEG | RADIOMETRIC_TIFF | DJI_RJPEG)
   visualCropUrl    String
   analyticsCropUrl String
 

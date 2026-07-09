@@ -85,3 +85,16 @@ def test_unsupported_format_aggregate_is_unknown_only_and_org_scoped():
     assert 'status: "UNKNOWN_FORMAT"' in EVENTS, "the aggregate must count UNKNOWN_FORMAT, not NO_RADIOMETRIC_CHANNEL"
     assert "organizationId" in EVENTS, "the aggregate must be org-scoped (multi-tenant native)"
     assert 'by: ["manufacturer", "model", "formatFingerprint"]' in EVENTS, "must group by device + fingerprint"
+
+
+def test_audit_provenance_surfaces_detected_format():
+    # M2-1e/CR-27: the audit readback must reconstruct which decoder produced the measurement.
+    prov = (ROOT / "apps/web/lib/audit/provenance.ts").read_text()
+    assert "detectedFormat" in prov, "audit provenance must surface the detected radiometric format (CR-27)"
+
+
+def test_radiometric_dod_and_failclosed_e2e_exist():
+    dod = (ROOT / "apps/web/e2e/dod.e2e.ts").read_text()
+    assert "chain.source.detectedFormat" in dod, "the DoD e2e must assert radiometric provenance (M2-1e)"
+    assert (ROOT / "apps/web/e2e/capture-quality.e2e.ts").exists(), \
+        "the fail-closed capture-quality DoD e2e must exist (M2-1d/f)"

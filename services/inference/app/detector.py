@@ -75,6 +75,7 @@ class Detection:
     priority: str
     classification: str        # evidence-framed, no verdict language
     standard_ref: str
+    detected_format: str | None  # sniffed radiometric format (M2-1e/CR-27) — audit provenance
     # --- provenance flags (radiometric always True now; delta_provisional retained at False for
     #     callback-contract stability, CR-23 — candidate for removal in a later contract revision) ---
     radiometric: bool
@@ -315,6 +316,7 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
         priority=priority,
         classification=classification,
         standard_ref=STANDARD_REF,
+        detected_format=result.detected_format.name if result.detected_format else None,
         radiometric=True,
         delta_provisional=False,
         proposal_count=len(proposals),

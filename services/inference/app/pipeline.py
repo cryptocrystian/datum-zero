@@ -70,6 +70,7 @@ def build_callback_payload(
             "priority": detection.priority,
             "classification": detection.classification,
             "standard_ref": detection.standard_ref,
+            "detected_format": detection.detected_format,
             # provenance flags (radiometric always True; delta_provisional retained at False, CR-23)
             "radiometric": detection.radiometric,
             "delta_provisional": detection.delta_provisional,

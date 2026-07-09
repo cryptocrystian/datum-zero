@@ -48,6 +48,7 @@
         "priority": { "type": "string" },
         "classification": { "type": "string", "minLength": 1 },
         "standard_ref": { "type": "string", "minLength": 1 },
+        "detected_format": { "type": ["string", "null"] },
         "radiometric": { "type": "boolean" },
         "delta_provisional": { "type": "boolean" },
         "latitude": { "type": ["string", "null"] },

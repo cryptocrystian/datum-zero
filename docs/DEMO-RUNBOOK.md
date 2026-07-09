@@ -35,6 +35,13 @@ This asserts, in one deterministic run:
 - both delivered payloads are **schema-valid** and **evidence-framed** (no verdict language, CR-12);
 - one `getProvenance()` call reconstructs the **entire chain** (source image → model → rule hit →
   reviewer → timestamps → downstream ref) and is **org-scoped**.
+- the source capture is **radiometric**: `sniff` routes to the decoder, ΔT is a real P99-vs-median
+  temperature delta (CR-24), and the audit chain surfaces the **detected format** (M2-1e/CR-27); the
+  committed synthetic fixture is `services/inference/tests/fixtures/synthetic_radiometric.tiff`;
+- a **non-radiometric / unknown-format** capture fails closed — no anomaly, no dispatch — and is
+  recorded as a **CaptureQualityEvent**, surfaced in the cockpit capture-quality strip + the
+  unsupported-format demand aggregate (M2-1d/f, `apps/web/e2e/capture-quality.e2e.ts`). The 8-bit
+  InfraredSolarModules crops now correctly fail closed and live only in the classifier unit tests.
 
 ## 3. (Optional) Watch it live in the cockpit
 ```bash

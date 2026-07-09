@@ -148,6 +148,7 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
         // Model owns the type (CR-19): class + IEC category served through the callback (DET-1b).
         class_label: "Cell", iec_category: 2, priority: "SCHEDULED",
         classification: MODEL_CLASSIFICATION, standard_ref: "IEC TS 62446-3",
+        detected_format: "RADIOMETRIC_TIFF",
         radiometric: true, delta_provisional: false,
         visual_crop_url: "s3://datum-zero-dev/v", analytics_crop_url: "s3://datum-zero-dev/a",
       },
@@ -222,6 +223,7 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
       if (!chain) continue;
       expect(chain.source.imagePath).toBe("s3://datum-zero-dev/master/e2e.tif");
       expect(chain.detection.modelVersion).toBe("thermal-classifier-v1");
+      expect(chain.source.detectedFormat).toBe("RADIOMETRIC_TIFF"); // radiometric provenance (M2-1e/CR-27)
       // Provenance surfaces the raw stored confidence (0..1); the work-order payload presents 0..100.
       expect(chain.detection.confidenceScore).toBeCloseTo(0.968, 3);
       expect(chain.asset?.internalLabel).toBe(EXPECT_LABEL);

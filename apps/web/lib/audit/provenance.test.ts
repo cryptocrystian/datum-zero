@@ -17,6 +17,7 @@ function row(overrides: Partial<ProvenanceRow["anomaly"]> = {}): ProvenanceRow {
       metricDelta: 18.4,
       metricUnit: "CELSIUS_DELTA",
       modelVersion: "thermal-threshold-v0.1.0",
+      detectedFormat: "RADIOMETRIC_TIFF",
       classification: "IEC TS 62446-3 Cat 2 — thermal abnormality",
       standardRef: "IEC TS 62446-3",
       recommendation: "Measured +18.4°C delta vs. median; review recommended.",

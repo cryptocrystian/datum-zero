@@ -159,6 +159,7 @@ def test_payload_carries_classification_and_stays_evidence_framed():
     assert det["standard_ref"] == "IEC TS 62446-3"
     assert "IEC TS 62446-3" in det["classification"]
     assert det["radiometric"] is True and det["delta_provisional"] is False
+    assert det["detected_format"] == "RADIOMETRIC_TIFF"  # radiometric provenance (M2-1e/CR-27)
     # HARD STOP: no verdict language anywhere in the served output (CR-12).
     flat = str(payload).lower()
     for forbidden in VERDICT_WORDS:
@@ -263,3 +264,15 @@ def test_fail_closed_quality_payload_carries_sniffed_format(tmp_path):
     assert q["status"] == "NO_RADIOMETRIC_CHANNEL"
     assert q["detected_format"] == "RADIOMETRIC_TIFF"
     assert q["format_fingerprint"] == "TIFF"
+
+
+# ---- committed synthetic radiometric TIFF fixture (M2-1e) — sniff -> TIFF decode -> real ΔT ---------
+FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_radiometric.tiff"
+
+
+def test_committed_radiometric_tiff_fixture_decodes_to_real_delta():
+    d = detect(FIXTURE.read_bytes())
+    assert isinstance(d, Detection)
+    assert d.detected_format == "RADIOMETRIC_TIFF"      # sniff routed to the TIFF decoder
+    assert d.radiometric is True and d.delta_provisional is False
+    assert d.metric_delta == pytest.approx(35.0, abs=1.0)  # decoded 60°C hot block - 25°C baseline
