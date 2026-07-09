@@ -71,6 +71,11 @@ def build_callback_payload(
             "classification": detection.classification,
             "standard_ref": detection.standard_ref,
             "detected_format": detection.detected_format,
+            # grounded IEC Category (M2-2a/CR-28): objective Category, no priority (CR-15)
+            "grounded_iec_category": detection.grounded_iec_category,
+            "requires_safety_review": detection.requires_safety_review,
+            "iec_normalization": detection.iec_normalization,
+            "iec_provenance": detection.iec_provenance,
             # provenance flags (radiometric always True; delta_provisional retained at False, CR-23)
             "radiometric": detection.radiometric,
             "delta_provisional": detection.delta_provisional,

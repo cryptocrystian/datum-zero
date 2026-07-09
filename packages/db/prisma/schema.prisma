@@ -244,6 +244,8 @@ model Anomaly {
   metricDelta      Float // e.g. °C delta
   metricUnit       String? // e.g. "CELSIUS_DELTA"
   detectedFormat   String? // M2-1e/CR-27: sniffed radiometric format for audit provenance (FLIR_RJPEG | RADIOMETRIC_TIFF | DJI_RJPEG)
+  iecCategory          Int? // M2-2a/CR-28: grounded objective IEC TS 62446-3 (CD) Category (1/2/3), additive
+  requiresSafetyReview Boolean? // M2-2a/CR-28: Cracking — human confirms isolation-affecting damage before the Category is trusted
   visualCropUrl    String
   analyticsCropUrl String
 

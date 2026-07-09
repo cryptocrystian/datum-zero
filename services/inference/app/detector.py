@@ -34,7 +34,7 @@ import numpy as np
 from PIL import Image
 
 from app.classifier import MODEL_VERSION, classify_array
-from app.iec_mapping import STANDARD_REF, served_priority
+from app.iec_mapping import STANDARD_REF, iec_category, served_priority
 from app.radiometric import ParseStatus, RadiometricResult, build_default_port, format_fingerprint
 
 __all__ = ["MODEL_VERSION", "Detection", "FailClosed", "DetectorConfig", "detect", "render_crops"]
@@ -80,6 +80,11 @@ class Detection:
     #     callback-contract stability, CR-23 — candidate for removal in a later contract revision) ---
     radiometric: bool
     delta_provisional: bool
+    # --- grounded IEC Category (M2-2a/CR-28): objective Category, ADDITIVE to the served path ---
+    grounded_iec_category: int | None
+    requires_safety_review: bool
+    iec_normalization: str
+    iec_provenance: str
     proposal_count: int
 
 
@@ -301,6 +306,9 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
                 best = (rank, b, cls, delta, served_cat, priority)
         _, box, cls, delta, served_cat, priority = best
 
+    # Grounded objective IEC Category (M2-2a/CR-28) — pattern + normalized ΔT; CATEGORY ONLY (CR-15).
+    # Irradiance (G) is not yet available to the detector, so normalization is honestly UNAVAILABLE.
+    grounded = iec_category(cls.label, delta)
     classification = f"{STANDARD_REF} Cat {served_cat} — {cls.label}: {cls.iec.condition}"
     if served_cat > cls.iec.iec_category:  # ΔT escalated above the pattern-class category
         classification += f" ΔT {delta:.1f}°C elevates priority to {priority}."
@@ -319,6 +327,10 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
         detected_format=result.detected_format.name if result.detected_format else None,
         radiometric=True,
         delta_provisional=False,
+        grounded_iec_category=grounded.category,
+        requires_safety_review=grounded.requires_safety_review,
+        iec_normalization=grounded.normalization,
+        iec_provenance=grounded.provenance,
         proposal_count=len(proposals),
     )
 

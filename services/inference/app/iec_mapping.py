@@ -94,3 +94,113 @@ def served_priority(
     delta_category = 3 if metric_delta >= prompt_delta else 2 if metric_delta >= scheduled_delta else 1
     served = max(base_category, delta_category)
     return served, PRIORITY_BY_CATEGORY[served]
+
+
+# ==================================================================================================
+# M2-2a (CR-28) — GROUNDED IEC Category: pattern + irradiance-normalized ΔT -> objective IEC Category.
+# ADDITIVE + CR-15-SAFE: this emits the objective CATEGORY ONLY (never MONITOR/SCHEDULED/PROMPT — that
+# priority stays RuleSet/served_priority-owned). Thresholds are read from the IEC TS 62446-3 COMMITTEE
+# DRAFT (82/1073) Annex C and are PROVISIONAL pending confirmation vs. the published IEC TS 62446-3:2017
+# — do NOT stamp :2017. Grounding notes: docs/IEC-62446-3-MAPPING.md.
+# ==================================================================================================
+
+# Provenance marker carried on every grounded finding (payload + docs). Committee Draft, not published.
+IEC_PROVENANCE = "IEC TS 62446-3 (CD / pending verification)"
+
+# Extent exponents for the §7.4 irradiance normalization ΔT_norm = ΔT · (1000/G)^x.
+EXTENT_POINT_X = 1.6      # sub-cell point sources (hot-spot, transfer resistance, heated junction box)
+EXTENT_EXTENDED_X = 1.0   # extended-area (whole cell, substring, whole module, soiling)
+
+
+@dataclass(frozen=True)
+class _ClassRule:
+    extent: str | None            # "point" | "extended" | None
+    x: float | None               # extent exponent (None when no category applies)
+    cat2_from: float | None       # ΔT_norm (K) at/above which the finding is >= Cat 2
+    cat3_from: float | None       # ΔT_norm (K) at/above which it is Cat 3; None => capped at Cat 2
+    requires_safety_review: bool = False  # human must confirm before a Category is trusted (Cracking)
+    data_quality: bool = False    # not an abnormality — an invalid inspection condition (Shadowing)
+    no_finding: bool = False      # nominal (No-Anomaly)
+    grounding: str = "[PROV]"     # [CD] = read from Annex C; [PROV] = provisional pending grounding
+
+
+# label -> grounded rule. See docs/IEC-62446-3-MAPPING.md for the Annex C source row per threshold.
+_CATEGORY_RULES: dict[str, _ClassRule] = {
+    "No-Anomaly":     _ClassRule(None, None, None, None, no_finding=True, grounding="[CD]"),
+    # whole cell = EXTENDED (x=1.0), NOT point — corrects a prior draft. Annex C ex.7.
+    "Cell":           _ClassRule("extended", EXTENT_EXTENDED_X, 10.0, 40.0, grounding="[CD]"),
+    "Cell-Multi":     _ClassRule("extended", EXTENT_EXTENDED_X, 10.0, 40.0, grounding="[CD-derived]"),
+    # sub-cell POINT source (x=1.6). Annex C has no discrete hot-spot row -> thresholds provisional.
+    "Hot-Spot":       _ClassRule("point", EXTENT_POINT_X, 10.0, 40.0, grounding="[PROV]"),
+    "Hot-Spot-Multi": _ClassRule("point", EXTENT_POINT_X, 10.0, 40.0, grounding="[PROV]"),
+    # bypass diode active — Cat 3 needs serial-arc (backside, not front-visible) -> cap at Cat 2.
+    "Diode":          _ClassRule("extended", EXTENT_EXTENDED_X, 2.0, None, grounding="[CD]"),
+    "Diode-Multi":    _ClassRule("extended", EXTENT_EXTENDED_X, 2.0, None, grounding="[CD]"),
+    "Offline-Module": _ClassRule("extended", EXTENT_EXTENDED_X, 2.0, None, grounding="[CD]"),
+    # broken glass = isolation/shock risk -> Cat 3 CANDIDATE, but benign micro-crack != Cat 3.
+    # Never a silent auto-3: emit Cat 3 + requiresSafetyReview so a human confirms isolation damage.
+    "Cracking":       _ClassRule("extended", EXTENT_EXTENDED_X, None, None, requires_safety_review=True, grounding="[CD]"),
+    # shading effects: rain-washable/transient -> Cat 1; persistent & high ΔT -> Cat 2 (threshold PROV,
+    # single-frame persistence is unknown here).
+    "Soiling":        _ClassRule("extended", EXTENT_EXTENDED_X, 10.0, None, grounding="[PROV]"),
+    "Vegetation":     _ClassRule("extended", EXTENT_EXTENDED_X, 10.0, None, grounding="[PROV]"),
+    # OPERATIONAL, not a fault: §5.1 requires shading-free inspection -> data-quality, not a Category.
+    # (M2-2a flags it; the actual reroute to CaptureQualityEvent is M2-2b.)
+    "Shadowing":      _ClassRule(None, None, None, None, data_quality=True, grounding="[CD]"),
+}
+
+
+@dataclass(frozen=True)
+class IecCategoryResult:
+    """Objective IEC TS 62446-3 (CD) Category for a classified abnormality. CATEGORY ONLY — no
+    MONITOR/SCHEDULED/PROMPT (CR-15: priority is RuleSet client policy, applied downstream)."""
+    label: str
+    category: int | None          # COA Category 1/2/3, or None (No-Anomaly / Shadowing)
+    extent: str | None            # "point" | "extended" | None
+    x: float | None               # extent exponent used for normalization
+    delta_t_norm: float | None    # ΔT normalized to 1000 W/m² (or raw ΔT if normalization UNAVAILABLE)
+    normalization: str            # "APPLIED" | "UNAVAILABLE" | "NOT_APPLICABLE"
+    requires_safety_review: bool  # human must confirm before the Category is trusted (Cracking)
+    data_quality: bool            # invalid inspection condition, route to data-quality (Shadowing)
+    provenance: str = IEC_PROVENANCE
+
+
+def normalize_delta_t(delta_measured: float, g_measured: float, x: float) -> float:
+    """§7.4 irradiance normalization to nominal 1000 W/m²: ΔT_norm = ΔT · (1000/G)^x. Pure."""
+    return float(delta_measured) * (1000.0 / float(g_measured)) ** float(x)
+
+
+def iec_category(label: str, delta_t: float, g_measured: float | None = None) -> IecCategoryResult:
+    """Grounded pattern + normalized-ΔT -> objective IEC Category (CD, provisional). Pure/deterministic.
+
+    Irradiance normalization is applied ONLY when G is present; missing G is carried honestly as
+     (raw ΔT, category provisional) — never fabricated. Fail closed: an
+    unknown class raises. No-Anomaly/Shadowing -> category None (no dispatchable finding)."""
+    if label not in _CATEGORY_RULES:
+        raise KeyError(f"unknown anomaly class: {label!r} (expected one of {CLASS_LABELS})")
+    rule = _CATEGORY_RULES[label]
+
+    # No category applies (nominal or an invalid inspection condition) -> normalization N/A.
+    if rule.no_finding or rule.data_quality:
+        return IecCategoryResult(label, None, rule.extent, rule.x, None, "NOT_APPLICABLE",
+                                 rule.requires_safety_review, rule.data_quality)
+
+    if g_measured is not None and g_measured > 0:
+        dtn = normalize_delta_t(delta_t, g_measured, rule.x)
+        normalization = "APPLIED"
+    else:
+        dtn = float(delta_t)  # honest fallback: raw ΔT, category provisional on un-normalized value
+        normalization = "UNAVAILABLE"
+
+    # Cracking: never a silent Category — emit a Cat 3 CANDIDATE gated on human safety review.
+    if rule.requires_safety_review:
+        category: int | None = 3
+    elif rule.cat3_from is not None and dtn >= rule.cat3_from:
+        category = 3
+    elif rule.cat2_from is not None and dtn >= rule.cat2_from:
+        category = 2
+    else:
+        category = 1
+
+    return IecCategoryResult(label, category, rule.extent, rule.x, round(dtn, 2), normalization,
+                             rule.requires_safety_review, rule.data_quality)

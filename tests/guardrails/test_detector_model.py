@@ -108,3 +108,19 @@ def test_serving_output_stays_evidence_framed():
         low = path.read_text().lower()
         for word in VERDICT_WORDS:
             assert word not in low, f"{path.name} must stay evidence-framed — found verdict word {word!r} (CR-12)"
+
+
+def test_grounded_iec_category_is_additive_and_category_only():
+    # M2-2a/CR-28: grounded pattern+ΔT→Category exists ADDITIVELY; the served path is untouched here
+    # (its retirement + RuleSet category policy is M2-2c). CR-15: the grounded RESULT carries the
+    # objective Category, never a priority string (asserted on the value in the inference unit test).
+    src = MAPPING.read_text()
+    assert "def iec_category(" in src and "IecCategoryResult" in src, "grounded Category mapping (CR-28)"
+    assert "def served_priority(" in src, "M2-2a is additive — served_priority must remain (retire in M2-2c)"
+    assert "IEC TS 62446-3 (CD / pending verification)" in src, "CD-provisional provenance marker (never :2017)"
+
+
+def test_grounded_iec_category_persisted_additively_nullable():
+    schema = (ROOT / "packages/db/prisma/schema.prisma").read_text()
+    assert "iecCategory" in schema and "requiresSafetyReview" in schema, \
+        "M2-2a persists the grounded Category additively on Anomaly (CR-27 pattern)"

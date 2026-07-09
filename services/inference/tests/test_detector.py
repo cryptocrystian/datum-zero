@@ -160,6 +160,11 @@ def test_payload_carries_classification_and_stays_evidence_framed():
     assert "IEC TS 62446-3" in det["classification"]
     assert det["radiometric"] is True and det["delta_provisional"] is False
     assert det["detected_format"] == "RADIOMETRIC_TIFF"  # radiometric provenance (M2-1e/CR-27)
+    # grounded IEC Category (M2-2a/CR-28) — additive, Category only (no priority), CD provenance.
+    assert det["grounded_iec_category"] in (1, 2, 3, None)
+    assert det["iec_normalization"] == "UNAVAILABLE"  # no irradiance available to the detector yet
+    assert "CD / pending verification" in det["iec_provenance"]
+    assert isinstance(det["requires_safety_review"], bool)
     # HARD STOP: no verdict language anywhere in the served output (CR-12).
     flat = str(payload).lower()
     for forbidden in VERDICT_WORDS:

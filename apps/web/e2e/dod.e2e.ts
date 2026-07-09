@@ -149,6 +149,8 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
         class_label: "Cell", iec_category: 2, priority: "SCHEDULED",
         classification: MODEL_CLASSIFICATION, standard_ref: "IEC TS 62446-3",
         detected_format: "RADIOMETRIC_TIFF",
+        grounded_iec_category: 2, requires_safety_review: false,
+        iec_normalization: "UNAVAILABLE", iec_provenance: "IEC TS 62446-3 (CD / pending verification)",
         radiometric: true, delta_provisional: false,
         visual_crop_url: "s3://datum-zero-dev/v", analytics_crop_url: "s3://datum-zero-dev/a",
       },
@@ -161,7 +163,7 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
     const cbRes = await inferenceCallback(cbReq);
     expect(cbRes.status).toBe(201);
 
-    const anomaly = await prisma.anomaly.findFirstOrThrow({ where: { mediaAssetId: MEDIA }, select: { id: true, spatialBindingStatus: true, assetId: true, classification: true, standardRef: true, priority: true, recommendation: true, ruleSetId: true, status: true, modelVersion: true } });
+    const anomaly = await prisma.anomaly.findFirstOrThrow({ where: { mediaAssetId: MEDIA }, select: { id: true, spatialBindingStatus: true, assetId: true, classification: true, standardRef: true, priority: true, recommendation: true, ruleSetId: true, status: true, modelVersion: true, iecCategory: true } });
 
     // 3) SPATIAL BIND (M0-06, CR-13)
     expect(anomaly.spatialBindingStatus).toBe(SpatialBindingStatus.BOUND);
@@ -177,6 +179,7 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
     expect(anomaly.recommendation).toContain("Priority SCHEDULED");
     expect(anomaly.recommendation).not.toMatch(VERDICT); // evidence-framed
     expect(anomaly.status).toBe(QueueStatus.PENDING_QA);
+    expect(anomaly.iecCategory).toBe(2); // M2-2a/CR-28: grounded objective Category persisted additively
 
     // 5) QA APPROVE (M0-08, CR-12) — 100% human gate; approval fans out via the guarded outbox
     await approveAnomaly(anomaly.id, ORG, REVIEWER);

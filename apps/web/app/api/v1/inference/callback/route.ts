@@ -134,6 +134,8 @@ export async function POST(req: NextRequest) {
       analyticsCropUrl: String(d.analytics_crop_url),
       modelVersion,
       detectedFormat: typeof d.detected_format === "string" ? d.detected_format : null,
+      iecCategory: typeof d.grounded_iec_category === "number" ? d.grounded_iec_category : null,
+      requiresSafetyReview: typeof d.requires_safety_review === "boolean" ? d.requires_safety_review : null,
       // CR-16: created unbound; M0-06 resolves assetId and flips this to BOUND.
       spatialBindingStatus: SpatialBindingStatus.UNBOUND_REVIEW,
       // status left at its PENDING_QA default; nothing dispatches while unbound (fail closed).
