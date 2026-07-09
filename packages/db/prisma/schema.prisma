@@ -24,26 +24,26 @@ generator client {
 // 1. ENTERPRISE SYSTEM CORE (multi-tenant root)
 // ============================================================================
 model Organization {
-  id            String              @id @default(uuid())
-  name          String
-  createdAt     DateTime            @default(now())
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
 
   // --- Concierge onboarding (CR-14): tenants provisioned via scripts/seed, no self-serve ---
-  onboardingState OnboardingState   @default(CONCIERGE_PROVISIONED)
+  onboardingState OnboardingState @default(CONCIERGE_PROVISIONED)
 
-  assets        Asset[]
-  integrations  Integration[]
-  ruleSets      RuleSet[]
-  pilots        Pilot[]
-  contracts     ClientContract[]
-  ingestion     IngestionSession[]
-  missions      MissionAssignment[]
-  users         User[]
+  assets       Asset[]
+  integrations Integration[]
+  ruleSets     RuleSet[]
+  pilots       Pilot[]
+  contracts    ClientContract[]
+  ingestion    IngestionSession[]
+  missions     MissionAssignment[]
+  users        User[]
 }
 
 enum OnboardingState {
   CONCIERGE_PROVISIONED // seeded manually by Datum Zero (M1 default)
-  SELF_SERVE            // reserved for M1.5+ (not in initial scope)
+  SELF_SERVE // reserved for M1.5+ (not in initial scope)
 }
 
 // ============================================================================
@@ -58,11 +58,11 @@ enum UserRole {
 }
 
 model User {
-  id             String       @id @default(uuid())
-  email          String       @unique
-  name           String?
-  emailVerified  DateTime?
-  image          String?
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  emailVerified DateTime?
+  image         String?
 
   // --- Datum Zero: tenant scope + role (multi-tenant native) ---
   organizationId String
@@ -72,9 +72,9 @@ model User {
   // trail. Deactivated users are denied at the signIn callback. Defaults active.
   isActive       Boolean      @default(true)
 
-  accounts       Account[]
-  sessions       Session[]
-  createdAt      DateTime     @default(now())
+  accounts  Account[]
+  sessions  Session[]
+  createdAt DateTime  @default(now())
 
   @@index([organizationId])
 }
@@ -115,19 +115,19 @@ model VerificationToken {
 
 // --- Per-client insurance requirement profile (CR-02, CR-09): requirement is a PROFILE, not a number ---
 model ClientContract {
-  id                          String       @id @default(uuid())
-  organizationId              String
-  organization                Organization @relation(fields: [organizationId], references: [id])
-  name                        String
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
 
-  requiredLiabilityLimit      Decimal      @db.Decimal(14, 2) // e.g. 5_000_000 (utilities/O&G often ≥ $5M)
-  requiresDedicatedAviation   Boolean      @default(true)     // NOT a CGL rider
-  requiresAdditionalInsured   Boolean      @default(true)     // client named AI on pilot policy
-  requiresPrimaryNonContrib   Boolean      @default(true)     // primary & non-contributory
-  requiresWaiverOfSubrogation Boolean      @default(true)
+  requiredLiabilityLimit      Decimal @db.Decimal(14, 2) // e.g. 5_000_000 (utilities/O&G often ≥ $5M)
+  requiresDedicatedAviation   Boolean @default(true) // NOT a CGL rider
+  requiresAdditionalInsured   Boolean @default(true) // client named AI on pilot policy
+  requiresPrimaryNonContrib   Boolean @default(true) // primary & non-contributory
+  requiresWaiverOfSubrogation Boolean @default(true)
 
-  missions                    MissionAssignment[]
-  createdAt                   DateTime     @default(now())
+  missions  MissionAssignment[]
+  createdAt DateTime            @default(now())
 
   @@index([organizationId])
 }
@@ -137,25 +137,25 @@ model ClientContract {
 // internalLabel = canonical spine. External IDs are OPTIONAL, incrementally populated.
 // ============================================================================
 model Asset {
-  id               String       @id @default(uuid())
-  organizationId   String
-  organization     Organization @relation(fields: [organizationId], references: [id])
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
-  internalLabel    String       // spine, e.g. "PV_ARRAY_04-ROW_12-STR_08" (seeded from as-built/SCADA)
+  internalLabel String // spine, e.g. "PV_ARRAY_04-ROW_12-STR_08" (seeded from as-built/SCADA)
 
   // --- Spatial identity for auto-binding (CR-13): GPS is the physical-layer match key ---
-  latitude         Decimal?     @db.Decimal(9, 6)
-  longitude        Decimal?     @db.Decimal(9, 6)
-  geoBoundary      Json?        // optional GeoJSON polygon footprint for spatial join
+  latitude    Decimal? @db.Decimal(9, 6)
+  longitude   Decimal? @db.Decimal(9, 6)
+  geoBoundary Json? // optional GeoJSON polygon footprint for spatial join
 
   // --- External system IDs: optional attributes; moat compounds as these attach ---
-  cadObjectId      String?      // BIM/CAD (Phase 2)
-  erpAssetId       String?      // ERP financial record (Phase 2)
-  procoreLocationId Int?        // ops/ticketing node (example)
+  cadObjectId       String? // BIM/CAD (Phase 2)
+  erpAssetId        String? // ERP financial record (Phase 2)
+  procoreLocationId Int? // ops/ticketing node (example)
 
-  anomalies        Anomaly[]
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  anomalies Anomaly[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([organizationId, internalLabel])
   @@index([organizationId, latitude, longitude])
@@ -173,23 +173,24 @@ enum CaptureModality {
 }
 
 model IngestionSession {
-  id              String            @id @default(uuid())
-  organizationId  String
-  organization    Organization      @relation(fields: [organizationId], references: [id])
-  modality        CaptureModality
-  pilotOrNodeId   String            // Pilot.id or IoT unit UUID
-  rawStoragePath  String            // S3 key
+  id             String          @id @default(uuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  modality       CaptureModality
+  pilotOrNodeId  String // Pilot.id or IoT unit UUID
+  rawStoragePath String // S3 key
 
-  isValidated     Boolean           @default(false) // set by Infield Validator (CR-11 quality firewall)
+  isValidated Boolean @default(false) // set by Infield Validator (CR-11 quality firewall)
 
   // --- NDAA: platform enforces via verified airframe registry, NOT in-browser detection (CR-11) ---
-  isNdaaVerified  Boolean           @default(false) // default FALSE until bound to a verified airframe
-  boundHardwareId String?           // FK to the verified PilotHardware this capture is bound to
-  boundHardware   PilotHardware?    @relation(fields: [boundHardwareId], references: [id])
+  isNdaaVerified  Boolean        @default(false) // default FALSE until bound to a verified airframe
+  boundHardwareId String? // FK to the verified PilotHardware this capture is bound to
+  boundHardware   PilotHardware? @relation(fields: [boundHardwareId], references: [id])
 
-  mediaAssets     MediaAsset[]
-  mission         MissionAssignment?
-  createdAt       DateTime          @default(now())
+  mediaAssets          MediaAsset[]
+  mission              MissionAssignment?
+  captureQualityEvents CaptureQualityEvent[]
+  createdAt            DateTime              @default(now())
 
   @@index([organizationId])
 }
@@ -198,7 +199,7 @@ model MediaAsset {
   id                 String           @id @default(uuid())
   ingestionSessionId String
   ingestionSession   IngestionSession @relation(fields: [ingestionSessionId], references: [id])
-  fullStoragePath    String           // S3 high-res master (COLD tier)
+  fullStoragePath    String // S3 high-res master (COLD tier)
   capturedAt         DateTime
   anomalies          Anomaly[]
 }
@@ -207,7 +208,7 @@ model MediaAsset {
 // 4. ANOMALY — evidence record (CR-12). NEVER a verdict.
 // ============================================================================
 enum QueueStatus {
-  PENDING_QA              // CR-12: 100% pass a Datum Zero QA reviewer before dispatch
+  PENDING_QA // CR-12: 100% pass a Datum Zero QA reviewer before dispatch
   APPROVED_DISPATCHED
   REJECTED_FALSE_POSITIVE
   LOGGED_INTERNAL
@@ -218,49 +219,49 @@ enum QueueStatus {
 // the anomaly starts UNBOUND_REVIEW; an unbound anomaly can never dispatch (fail closed). ---
 enum SpatialBindingStatus {
   UNBOUND_REVIEW // created by inference; not yet resolved to an Asset (or no confident match)
-  BOUND          // resolved to a single Asset within the org (M0-06)
+  BOUND // resolved to a single Asset within the org (M0-06)
 }
 
 model Anomaly {
-  id                 String       @id @default(uuid())
-  organizationId     String       // denormalized for tenant-scoped queries/RLS
+  id                   String               @id @default(uuid())
+  organizationId       String // denormalized for tenant-scoped queries/RLS
   // CR-16: nullable — set by spatial auto-binding (M0-06), not at inference time.
-  assetId            String?
-  asset              Asset?       @relation(fields: [assetId], references: [id])
+  assetId              String?
+  asset                Asset?               @relation(fields: [assetId], references: [id])
   spatialBindingStatus SpatialBindingStatus @default(UNBOUND_REVIEW)
-  mediaAssetId       String
-  mediaAsset         MediaAsset   @relation(fields: [mediaAssetId], references: [id])
+  mediaAssetId         String
+  mediaAsset           MediaAsset           @relation(fields: [mediaAssetId], references: [id])
 
-  boundingBox        Int[]        // [x1,y1,x2,y2] within MediaAsset
-  latitude           Decimal?     @db.Decimal(9, 6)
-  longitude          Decimal?     @db.Decimal(9, 6)
-  zAxisOffset        Float?
+  boundingBox Int[] // [x1,y1,x2,y2] within MediaAsset
+  latitude    Decimal? @db.Decimal(9, 6)
+  longitude   Decimal? @db.Decimal(9, 6)
+  zAxisOffset Float?
 
   // --- Measurement layer (CR-15): classification per published standard ---
-  standardRef        String?      // e.g. "IEC TS 62446-3"
-  classification     String?      // e.g. thermal-abnormality category from the standard's matrix
-  confidenceScore    Float
-  metricDelta        Float        // e.g. °C delta
-  metricUnit         String?      // e.g. "CELSIUS_DELTA"
-  visualCropUrl      String
-  analyticsCropUrl   String
+  standardRef      String? // e.g. "IEC TS 62446-3"
+  classification   String? // e.g. thermal-abnormality category from the standard's matrix
+  confidenceScore  Float
+  metricDelta      Float // e.g. °C delta
+  metricUnit       String? // e.g. "CELSIUS_DELTA"
+  visualCropUrl    String
+  analyticsCropUrl String
 
   // --- Adjudication layer (CR-12): recommendation only; client decides outcome ---
-  status             QueueStatus  @default(PENDING_QA)
+  status         QueueStatus @default(PENDING_QA)
   // Maintenance priority from the client RuleSet POLICY over the model classification + ΔT (DET-1c,
   // CR-15 amend): MONITOR | SCHEDULED | PROMPT. Evidence-framed severity, NEVER a verdict.
-  priority           String?
-  recommendation     String?      // evidence-framed, e.g. "review recommended vs. IEC TS 62446-3 Cat 2"
-  ruleSetId          String?
-  ruleSet            RuleSet?     @relation(fields: [ruleSetId], references: [id])
+  priority       String?
+  recommendation String? // evidence-framed, e.g. "review recommended vs. IEC TS 62446-3 Cat 2"
+  ruleSetId      String?
+  ruleSet        RuleSet?    @relation(fields: [ruleSetId], references: [id])
 
   // --- Immutable audit trail (CR-12): reconstruct every determination ---
-  modelVersion       String?
-  reviewedById       String?      // Datum Zero QA reviewer
-  reviewedAt         DateTime?
+  modelVersion String?
+  reviewedById String? // Datum Zero QA reviewer
+  reviewedAt   DateTime?
 
-  workOrders         WorkOrderDispatch[]
-  createdAt          DateTime     @default(now())
+  workOrders WorkOrderDispatch[]
+  createdAt  DateTime            @default(now())
 
   @@index([organizationId, status])
   @@index([assetId])
@@ -276,18 +277,18 @@ model RuleSet {
   name           String
   targetModality CaptureModality
 
-  triggerMetric  String          // e.g. "Temp_Delta_Threshold"
-  operator       String          // ">=", "<=", "=="
+  triggerMetric  String // e.g. "Temp_Delta_Threshold"
+  operator       String // ">=", "<=", "=="
   thresholdValue Float
 
   // --- Standards provenance (CR-15): defaults grounded in published standards, client-overridable ---
-  standardRef    String?         // e.g. "IEC TS 62446-3"
-  standardVersion String?        // e.g. "2017"
-  isTemplate     Boolean         @default(false) // shipped default vs. tenant override
-  version        Int             @default(1)
+  standardRef     String? // e.g. "IEC TS 62446-3"
+  standardVersion String? // e.g. "2017"
+  isTemplate      Boolean @default(false) // shipped default vs. tenant override
+  version         Int     @default(1)
 
-  routeTargets   String[]        // delivery target keys, e.g. ["GENERIC_WEBHOOK","PDF_DISPATCH"]
-  anomalies      Anomaly[]
+  routeTargets String[] // delivery target keys, e.g. ["GENERIC_WEBHOOK","PDF_DISPATCH"]
+  anomalies    Anomaly[]
 
   @@index([organizationId])
 }
@@ -302,74 +303,74 @@ enum PilotTier {
 }
 
 model Pilot {
-  id                String              @id @default(uuid())
-  organizationId    String?             // null = Datum Zero marketplace pool
-  organization      Organization?       @relation(fields: [organizationId], references: [id])
+  id                String        @id @default(uuid())
+  organizationId    String? // null = Datum Zero marketplace pool
+  organization      Organization? @relation(fields: [organizationId], references: [id])
   firstName         String
   lastName          String
-  email             String              @unique
+  email             String        @unique
   part107LicenseNum String
   licenseExpiry     DateTime
-  stripeConnectId   String?             // payout ONLY (never insurance premium — CR-03)
-  tier              PilotTier           @default(TIER_3_ROGUE) // CR: verify default vs Tier-1=Apex intent
+  stripeConnectId   String? // payout ONLY (never insurance premium — CR-03)
+  tier              PilotTier     @default(TIER_3_ROGUE) // CR: verify default vs Tier-1=Apex intent
 
-  hardwareProfile   PilotHardware[]
-  missions          MissionAssignment[]
-  insurance         PilotInsurance[]    // BYO annual and/or on-demand referral records
-  createdAt         DateTime            @default(now())
+  hardwareProfile PilotHardware[]
+  missions        MissionAssignment[]
+  insurance       PilotInsurance[] // BYO annual and/or on-demand referral records
+  createdAt       DateTime            @default(now())
 }
 
 // --- Verified airframe registry (CR-11): NDAA enforced by the platform, not the browser ---
 model PilotHardware {
-  id             String             @id @default(uuid())
+  id             String          @id @default(uuid())
   pilotId        String
-  pilot          Pilot              @relation(fields: [pilotId], references: [id])
+  pilot          Pilot           @relation(fields: [pilotId], references: [id])
   aircraftModel  String
   sensorType     CaptureModality
-  serialNumber   String             // matched against telemetry at ingestion (not live Remote ID)
-  remoteIdSerial String?            // from uploaded flight logs, if present
+  serialNumber   String // matched against telemetry at ingestion (not live Remote ID)
+  remoteIdSerial String? // from uploaded flight logs, if present
 
-  ndaaVerified   Boolean            @default(false) // verified at onboarding
-  approvedListRef String?           // e.g. "Blue UAS" / DIU cleared-list reference
-  verifiedAt     DateTime?
+  ndaaVerified    Boolean   @default(false) // verified at onboarding
+  approvedListRef String? // e.g. "Blue UAS" / DIU cleared-list reference
+  verifiedAt      DateTime?
 
-  sessions       IngestionSession[]
+  sessions IngestionSession[]
 }
 
 enum InsuranceKind {
-  BYO_ANNUAL      // pilot's own annual policy (any carrier)
-  ON_DEMAND       // bound by pilot via referral partner (e.g. SkyWatch)
+  BYO_ANNUAL // pilot's own annual policy (any carrier)
+  ON_DEMAND // bound by pilot via referral partner (e.g. SkyWatch)
 }
 
 enum VerificationSource {
-  PROVIDER_API    // authoritative policy-status API (on-demand referral)
-  COI_VENDOR      // TrustLayer/Certificial/etc. extraction of a BYO COI
-  MANUAL_QA       // fallback: human review in cockpit
+  PROVIDER_API // authoritative policy-status API (on-demand referral)
+  COI_VENDOR // TrustLayer/Certificial/etc. extraction of a BYO COI
+  MANUAL_QA // fallback: human review in cockpit
 }
 
 // --- Insurance = proof-of-coverage record. We verify; we never bind or collect (CR-03/10) ---
 model PilotInsurance {
-  id                    String             @id @default(uuid())
-  pilotId               String
-  pilot                 Pilot              @relation(fields: [pilotId], references: [id])
-  kind                  InsuranceKind
-  providerName          String
-  policyNumber          String?
-  liabilityLimit        Decimal            @db.Decimal(14, 2)
-  isDedicatedAviation   Boolean            @default(false)
-  hasBlanketAI          Boolean            @default(false) // blanket additional-insured endorsement (CR-09)
-  hasPrimaryNonContrib  Boolean            @default(false)
-  hasWaiverOfSubrogation Boolean           @default(false)
-  certificateUrl        String?
+  id                     String        @id @default(uuid())
+  pilotId                String
+  pilot                  Pilot         @relation(fields: [pilotId], references: [id])
+  kind                   InsuranceKind
+  providerName           String
+  policyNumber           String?
+  liabilityLimit         Decimal       @db.Decimal(14, 2)
+  isDedicatedAviation    Boolean       @default(false)
+  hasBlanketAI           Boolean       @default(false) // blanket additional-insured endorsement (CR-09)
+  hasPrimaryNonContrib   Boolean       @default(false)
+  hasWaiverOfSubrogation Boolean       @default(false)
+  certificateUrl         String?
 
   // --- Verification (CR-10): fail closed if not confirmed active-and-adequate for the window ---
-  isVerified            Boolean            @default(false)
-  verificationSource    VerificationSource?
-  verifiedAt            DateTime?
-  coverageStart         DateTime?
-  coverageEnd           DateTime?
+  isVerified         Boolean             @default(false)
+  verificationSource VerificationSource?
+  verifiedAt         DateTime?
+  coverageStart      DateTime?
+  coverageEnd        DateTime?
 
-  createdAt             DateTime           @default(now())
+  createdAt DateTime @default(now())
 
   @@index([pilotId])
 }
@@ -393,17 +394,17 @@ model MissionAssignment {
   ingestionSessionId String?           @unique
   ingestionSession   IngestionSession? @relation(fields: [ingestionSessionId], references: [id])
 
-  siteAddress        String
-  targetCoordinates  String            // GeoJSON polygon
-  payoutAmount       Decimal           @db.Decimal(10, 2)
-  status             MissionStatus     @default(ASSIGNED)
-  scheduledDate      DateTime
-  completedAt        DateTime?
+  siteAddress       String
+  targetCoordinates String // GeoJSON polygon
+  payoutAmount      Decimal       @db.Decimal(10, 2)
+  status            MissionStatus @default(ASSIGNED)
+  scheduledDate     DateTime
+  completedAt       DateTime?
 
   // --- Coverage gate (CR-10): the mission cannot dispatch unless a verified policy meets the profile ---
-  coverageVerified   Boolean           @default(false)
+  coverageVerified Boolean @default(false)
 
-  createdAt          DateTime          @default(now())
+  createdAt DateTime @default(now())
 
   @@index([organizationId])
 }
@@ -413,14 +414,14 @@ model MissionAssignment {
 // Generic Delivery Adapter Suite is the M1 product surface. Native adapters are demand-driven (M2).
 // ============================================================================
 enum DeliveryTargetType {
-  GENERIC_WEBHOOK   // canonical JSON payload (packages/adapters/contracts/work-order.schema.json)
-  PDF_DISPATCH      // actionable field report
-  CSV_S3            // structured data drop to client bucket
-  NATIVE_JIRA       // M0 sandbox reference impl / M2 native
+  GENERIC_WEBHOOK // canonical JSON payload (packages/adapters/contracts/work-order.schema.json)
+  PDF_DISPATCH // actionable field report
+  CSV_S3 // structured data drop to client bucket
+  NATIVE_JIRA // M0 sandbox reference impl / M2 native
   NATIVE_SERVICENOW // M2 (demand-driven)
-  NATIVE_PROCORE    // M2 (demand-driven)
-  NATIVE_MAXIMO     // M2 (contract-funded)
-  NATIVE_SAP_PM     // M2 (contract-funded)
+  NATIVE_PROCORE // M2 (demand-driven)
+  NATIVE_MAXIMO // M2 (contract-funded)
+  NATIVE_SAP_PM // M2 (contract-funded)
 }
 
 model Integration {
@@ -429,32 +430,51 @@ model Integration {
   organization   Organization       @relation(fields: [organizationId], references: [id])
   targetType     DeliveryTargetType
   displayName    String
-  config         Json               // endpoint URL, S3 bucket, field mappings, etc.
-  secretVaultKey String?            // AWS Secrets Manager reference (never store secrets in DB)
+  config         Json // endpoint URL, S3 bucket, field mappings, etc.
+  secretVaultKey String? // AWS Secrets Manager reference (never store secrets in DB)
   isActive       Boolean            @default(true)
 
-  dispatches     WorkOrderDispatch[]
+  dispatches WorkOrderDispatch[]
 
   @@index([organizationId])
 }
 
 // --- Rate-limited, idempotent outbox (CR: resilient webhook delivery) ---
 model WorkOrderDispatch {
-  id             String       @id @default(uuid())
+  id             String      @id @default(uuid())
   organizationId String
   anomalyId      String
-  anomaly        Anomaly      @relation(fields: [anomalyId], references: [id])
+  anomaly        Anomaly     @relation(fields: [anomalyId], references: [id])
   integrationId  String
-  integration    Integration  @relation(fields: [integrationId], references: [id])
+  integration    Integration @relation(fields: [integrationId], references: [id])
 
-  payload        Json         // rendered per work-order.schema.json (evidence-framed — CR-12)
-  idempotencyKey String       @unique
-  attempts       Int          @default(0)
+  payload        Json // rendered per work-order.schema.json (evidence-framed — CR-12)
+  idempotencyKey String    @unique
+  attempts       Int       @default(0)
   lastStatus     Int?
-  isResolved     Boolean      @default(false)
+  isResolved     Boolean   @default(false)
   retryAfter     DateTime?
-  downstreamRef  String?      // external ticket/ref id returned by the target
-  createdAt      DateTime     @default(now())
+  downstreamRef  String? // external ticket/ref id returned by the target
+  createdAt      DateTime  @default(now())
 
   @@index([organizationId, isResolved])
+}
+
+/// M2-1d (CR-11/CR-22/CR-25) — a REJECTED capture's radiometric data-quality outcome. Session- +
+/// org-scoped and DISTINCT from Anomaly: there is NO dispatch path by construction (no relation to
+/// WorkOrderDispatch), so a data-quality event can never become a work order (fail closed).
+model CaptureQualityEvent {
+  id                 String           @id @default(uuid())
+  organizationId     String // denormalized for tenant-scoped queries/RLS
+  ingestionSessionId String
+  ingestionSession   IngestionSession @relation(fields: [ingestionSessionId], references: [id])
+  status             String // parse status: NO_RADIOMETRIC_CHANNEL | UNKNOWN_FORMAT
+  reason             String // evidence-framed, operator-facing (no verdict language, CR-12)
+  manufacturer       String?
+  model              String?
+  detectedFormat     String? // FLIR_RJPEG | RADIOMETRIC_TIFF | DJI_RJPEG | null
+  createdAt          DateTime         @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([ingestionSessionId])
 }

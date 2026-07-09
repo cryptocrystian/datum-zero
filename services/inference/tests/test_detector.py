@@ -216,21 +216,48 @@ def test_channel_preservation_source_bytes_unchanged_and_derivative_distinct(tmp
     assert store.get("org/o1/anomalies/s1/analytics_crop.png") != raw  # distinct display derivative
 
 
-def test_process_session_fails_closed_does_not_dispatch_or_write_crops(tmp_path):
+def test_process_session_fails_closed_records_quality_event_not_anomaly(tmp_path):
     store = LocalStorage(str(tmp_path))
     store.put("org/o1/ingest/s1/capture.jpg", plain_jpeg())  # 8-bit, no radiometric channel
 
-    posted = []
+    anomaly_posts, quality_posts = [], []
     result = process_session(
         ingestion_session_id="s1",
         organization_id="o1",
         raw_storage_path="local://org/o1/ingest/s1/capture.jpg",
         storage=store,
-        post=lambda p: posted.append(p),
+        post=lambda p: anomaly_posts.append(p),
+        post_quality=lambda p: (quality_posts.append(p) or {"captureQualityEventId": "cqe"}),
     )
     assert result["dispatched"] is False
     assert result["status"] == "UNKNOWN_FORMAT"
-    assert result["reason"] and result["payload"] is None and result["callback"] is None
-    assert posted == []  # never dispatched — no fabricated anomaly (CR-22/CR-23)
+    assert result["payload"] is None and result["callback"] is None
+    # the anomaly callback is NEVER hit; the DISTINCT capture-quality callback records the rejection.
+    assert anomaly_posts == []
+    assert len(quality_posts) == 1
+    q = quality_posts[0]
+    assert q["status"] == "UNKNOWN_FORMAT"
+    assert q["ingestion_session_id"] == "s1" and q["organization_id"] == "o1"
+    assert q["detected_format"] is None  # no decoder matched a plain JPEG
+    assert result["quality_callback"] == {"captureQualityEventId": "cqe"}
     with pytest.raises(FileNotFoundError):  # no crops written on fail-closed
         store.get("org/o1/anomalies/s1/visual_crop.png")
+
+
+def test_fail_closed_quality_payload_carries_sniffed_format(tmp_path):
+    # A colorized TIFF: the decoder MATCHED (TIFF) but found no thermal band → NO_RADIOMETRIC_CHANNEL
+    # with the sniffed format flowing through for observability (M2-1d/CR-25, M2-1f).
+    store = LocalStorage(str(tmp_path))
+    store.put("org/o1/ingest/s2/cap.tif", colorized_tiff())
+    quality_posts = []
+    process_session(
+        ingestion_session_id="s2",
+        organization_id="o1",
+        raw_storage_path="local://org/o1/ingest/s2/cap.tif",
+        storage=store,
+        post=lambda p: None,
+        post_quality=lambda p: quality_posts.append(p),
+    )
+    q = quality_posts[0]
+    assert q["status"] == "NO_RADIOMETRIC_CHANNEL"
+    assert q["detected_format"] == "RADIOMETRIC_TIFF"

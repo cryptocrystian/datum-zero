@@ -85,12 +85,14 @@ class Detection:
 @dataclass(frozen=True)
 class FailClosed:
     """No usable radiometric channel — a session data-quality failure, NOT a dispatchable anomaly
-    (CR-22/CR-23). Carries the parse status + captured EXIF maker/model for later observability
-    (surfacing is M2-1d; the unknown-format QA event is M2-1f)."""
+    (CR-22/CR-23). Carries the parse status + captured EXIF maker/model + the sniffed format (if a
+    decoder matched but found no channel) so the pipeline can surface a CaptureQualityEvent (M2-1d,
+    CR-25); the unknown-format QA event is M2-1f."""
     status: str                 # ParseStatus name: NO_RADIOMETRIC_CHANNEL | UNKNOWN_FORMAT
     reason: str
     manufacturer: str | None
     model: str | None
+    detected_format: str | None  # RadiometricFormat name when a decoder matched, else None
 
 
 _FAIL_REASON = {
@@ -248,6 +250,7 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
             reason=_FAIL_REASON.get(result.status, result.status.name),
             manufacturer=result.manufacturer,
             model=result.model,
+            detected_format=result.detected_format.name if result.detected_format else None,
         )
 
     arr = np.asarray(result.temperature_c, dtype=np.float32)

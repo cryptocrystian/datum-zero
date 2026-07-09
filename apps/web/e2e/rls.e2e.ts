@@ -94,4 +94,43 @@ describe("M1-02 RLS — tenant isolation proven at the DB layer (as datumzero_ap
       }),
     ).rejects.toThrow();
   });
+
+  it("CaptureQualityEvent is visible only within its org (direct-organizationId RLS, CR-25)", async () => {
+    const sessionId = "rls-probe-cqe-session";
+    const eventId = "rls-probe-cqe-event";
+    // Seed a session + event under ORG (WITH CHECK passes: org = ORG). IDs are TEXT, not native uuid.
+    await db.$transaction(async (tx) => {
+      await setOrg(tx as unknown as PrismaClient, ORG);
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "IngestionSession" (id, "organizationId", modality, "pilotOrNodeId", "rawStoragePath")
+         VALUES ($1, $2, 'DRONE_THERMAL', 'rls-probe', 's3://rls/probe') ON CONFLICT (id) DO NOTHING`,
+        sessionId, ORG,
+      );
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "CaptureQualityEvent" (id, "organizationId", "ingestionSessionId", status, reason)
+         VALUES ($1, $2, $3, 'UNKNOWN_FORMAT', 'rls-probe') ON CONFLICT (id) DO NOTHING`,
+        eventId, ORG, sessionId,
+      );
+    });
+    const mine = await db.$transaction(async (tx) => {
+      await setOrg(tx as unknown as PrismaClient, ORG);
+      return tx.$queryRawUnsafe<Array<{ n: number }>>(
+        `SELECT count(*)::int AS n FROM "CaptureQualityEvent" WHERE id = $1`, eventId,
+      );
+    });
+    expect(mine[0].n).toBe(1);
+    const theirs = await db.$transaction(async (tx) => {
+      await setOrg(tx as unknown as PrismaClient, OTHER);
+      return tx.$queryRawUnsafe<Array<{ n: number }>>(
+        `SELECT count(*)::int AS n FROM "CaptureQualityEvent" WHERE id = $1`, eventId,
+      );
+    });
+    expect(theirs[0].n).toBe(0);
+    // Cleanup (as ORG) so the suite stays repeatable.
+    await db.$transaction(async (tx) => {
+      await setOrg(tx as unknown as PrismaClient, ORG);
+      await tx.$executeRawUnsafe(`DELETE FROM "CaptureQualityEvent" WHERE id = $1`, eventId);
+      await tx.$executeRawUnsafe(`DELETE FROM "IngestionSession" WHERE id = $1`, sessionId);
+    });
+  });
 });

@@ -9,9 +9,9 @@ Anomaly UNBOUND (CR-16).
 
 Fail closed (CR-22/CR-23): if the capture has no usable radiometric channel (unknown format or
 colorized-only), `detect()` returns a `FailClosed` — the pipeline does NOT fabricate a measurement,
-does NOT write crops, and does NOT POST an anomaly. It returns a structured data-quality outcome
-(status + reason + EXIF maker/model). This is a session data-quality failure, not a PENDING_QA
-anomaly; operator surfacing is M2-1d and the unknown-format QA event is M2-1f.
+does NOT write crops, and does NOT POST an anomaly. Instead it records the outcome via the DISTINCT
+capture-quality callback (M2-1d, CR-25) and returns a structured data-quality result. This is a
+session data-quality failure, not a PENDING_QA anomaly; the unknown-format QA event is M2-1f.
 
 The payload carries the MEASUREMENT layer (box, ΔT, confidence, crops) AND the standards
 CLASSIFICATION the model raises (class + IEC TS 62446-3 category + priority) — all evidence-framed, no
@@ -82,12 +82,9 @@ def build_callback_payload(
     }
 
 
-def _post_callback(payload: dict[str, Any]) -> dict[str, Any]:
+def _post_to(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     import httpx
 
-    url = os.environ.get(
-        "INFERENCE_CALLBACK_URL", "http://localhost:3000/api/v1/inference/callback"
-    )
     token = os.environ.get("INFERENCE_CALLBACK_TOKEN")
     headers = {"content-type": "application/json"}
     if token:
@@ -95,6 +92,25 @@ def _post_callback(payload: dict[str, Any]) -> dict[str, Any]:
     resp = httpx.post(url, json=payload, headers=headers, timeout=30.0)
     resp.raise_for_status()
     return resp.json()
+
+
+def _post_callback(payload: dict[str, Any]) -> dict[str, Any]:
+    return _post_to(
+        os.environ.get("INFERENCE_CALLBACK_URL", "http://localhost:3000/api/v1/inference/callback"),
+        payload,
+    )
+
+
+def _post_quality(payload: dict[str, Any]) -> dict[str, Any]:
+    """Deliver the data-quality outcome to the DISTINCT capture-quality callback (M2-1d, CR-25) —
+    never the anomaly callback. Same shared-secret posture."""
+    return _post_to(
+        os.environ.get(
+            "INFERENCE_QUALITY_CALLBACK_URL",
+            "http://localhost:3000/api/v1/inference/capture-quality",
+        ),
+        payload,
+    )
 
 
 def process_session(
@@ -107,32 +123,49 @@ def process_session(
     captured_at: str | None = None,
     storage: StoragePort | None = None,
     post: Poster | None = None,
+    post_quality: Poster | None = None,
 ) -> dict[str, Any]:
     """Run detection for one ingestion session and deliver the evidence to the callback.
 
     On a usable radiometric capture: writes crops + POSTs the anomaly payload, returns
     ``{"status": "OK", "dispatched": True, "payload", "callback"}``.
-    Fail closed on no usable radiometric channel: NO crops, NO POST — returns
-    ``{"status": <parse status>, "dispatched": False, "reason", "manufacturer", "model",
-    "payload": None, "callback": None}`` (CR-22/CR-23)."""
+    Fail closed on no usable radiometric channel: NO crops, NO anomaly POST — POSTs the data-quality
+    outcome to the capture-quality callback (M2-1d, CR-25) and returns ``{"status": <parse status>,
+    "dispatched": False, "reason", "manufacturer", "model", "detected_format", "payload": None,
+    "callback": None, "quality_payload", "quality_callback"}`` (CR-22/CR-23)."""
     store = storage or get_storage()
     poster = post or _post_callback
+    quality_poster = post_quality or _post_quality
 
     image = store.get(locator_to_key(raw_storage_path))
     outcome = detect(image)
 
     if isinstance(outcome, FailClosed):
-        # No usable radiometric channel — do NOT fabricate, do NOT dispatch (CR-22/CR-23).
+        # No usable radiometric channel — do NOT fabricate, do NOT write crops, do NOT dispatch an
+        # anomaly (CR-22/CR-23). Record it as a data-quality event via the DISTINCT capture-quality
+        # callback (M2-1d, CR-25). The reason is derived operator-side (single source of truth).
+        quality_payload = {
+            "ingestion_session_id": ingestion_session_id,
+            "organization_id": organization_id,
+            "status": outcome.status,
+            "manufacturer": outcome.manufacturer,
+            "model": outcome.model,
+            "detected_format": outcome.detected_format,
+        }
+        quality_result = quality_poster(quality_payload)
         return {
             "status": outcome.status,
             "dispatched": False,
             "reason": outcome.reason,
             "manufacturer": outcome.manufacturer,
             "model": outcome.model,
+            "detected_format": outcome.detected_format,
             "ingestion_session_id": ingestion_session_id,
             "organization_id": organization_id,
             "payload": None,
             "callback": None,
+            "quality_payload": quality_payload,
+            "quality_callback": quality_result,
         }
 
     detection = outcome
