@@ -10,8 +10,10 @@ On a radiometric capture:
   (2) CLASSIFY — for each proposal: normalize the °C crop to an 8-bit grayscale crop (`_stretch_u8`,
       the classifier's training domain) → DET-1a ONNX classifier → class + confidence → IEC
       TS 62446-3 category via `app.iec_mapping`.
-  (3) ΔT — radiometric delta of a region vs. the frame median, in native °C. (The median-baseline
-      upgrade is M2-1c; the algorithm here is unchanged — it now simply reads real °C.)
+  (3) ΔT — ΔT = P99(hotspot region) − median(local baseline ring), in native °C (M2-1c, CR-24). A
+      robust high percentile rejects single-pixel sensor spikes; a median baseline rejects field
+      outliers. A quiet (uniform) radiometric frame yields ΔT ≈ 0 — a VALID low/no-anomaly outcome,
+      distinct from the M2-1b fail-closed (which is only for NO radiometric channel).
   (4) COMBINE — class + ΔT → the SERVED priority; a high ΔT escalates toward Cat 3 / PROMPT per the
       IEC matrix (`iec_mapping.served_priority`), never downgrades.
 
@@ -48,6 +50,13 @@ class DetectorConfig:
     max_proposals: int = 8                # cap the classify fan-out (largest regions first)
     escalate_scheduled_delta: float = 10.0  # ΔT (°C) floor that lifts a finding to ≥ Cat 2
     escalate_prompt_delta: float = 20.0     # ΔT (°C) floor that lifts a finding to Cat 3 / PROMPT
+    # --- ΔT measurement (M2-1c, CR-24) ---
+    hotspot_percentile: float = 99.0      # T_hotspot = this percentile of the region (P99 rejects the
+    #                                       single-pixel sensor spike yet stays near the true peak — P95
+    #                                       under-reports a compact hotspot). NOT the noise-sensitive max.
+    baseline_ring_frac: float = 1.0       # T_baseline window = the hotspot box grown by this fraction of
+    #                                       its size on each side, MINUS the hotspot (a surrounding ring).
+    delta_t_decimals: int = 1             # ΔT rounding precision (°C).
 
 
 DEFAULT_CONFIG = DetectorConfig()
@@ -182,14 +191,45 @@ def _propose(arr: np.ndarray, config: DetectorConfig) -> list[tuple[int, int, in
     return boxes[: config.max_proposals]
 
 
-def _delta_t(arr: np.ndarray, box: tuple[int, int, int, int], frame_median: float) -> float:
-    """ΔT (°C) of a region vs. the frame median. Real radiometric temperature only (CR-23). The
-    region-vs-local-median baseline upgrade is M2-1c — the algorithm is unchanged here."""
+def _local_baseline(arr: np.ndarray, box: tuple[int, int, int, int], config: DetectorConfig) -> float:
+    """T_baseline: the MEDIAN °C of the local field surrounding the hotspot (CR-24). The field is a
+    ring — the proposal box grown by `baseline_ring_frac` of its size on each side, EXCLUDING the
+    hotspot box. Median (not mean) so a few outlier pixels in the field don't move it. Degrades
+    gracefully: if the ring is empty, use the whole frame minus the hotspot; if THAT is empty (the
+    hotspot fills the frame), use the frame median — so a uniform frame → ΔT ≈ 0."""
+    h, w = arr.shape
+    x1, y1, x2, y2 = box
+    mx = max(1, int(round((x2 - x1) * config.baseline_ring_frac)))
+    my = max(1, int(round((y2 - y1) * config.baseline_ring_frac)))
+    rx1, ry1 = max(0, x1 - mx), max(0, y1 - my)
+    rx2, ry2 = min(w, x2 + mx), min(h, y2 + my)
+
+    field = np.zeros((h, w), dtype=bool)
+    field[ry1:ry2, rx1:rx2] = True
+    field[y1:y2, x1:x2] = False  # exclude the hotspot from its own baseline
+    if field.any():
+        return float(np.median(arr[field]))
+
+    outside = np.ones((h, w), dtype=bool)
+    outside[y1:y2, x1:x2] = False
+    if outside.any():
+        return float(np.median(arr[outside]))
+    return float(np.median(arr))  # hotspot IS the whole frame → degenerate (ΔT ≈ 0)
+
+
+def _delta_t(arr: np.ndarray, box: tuple[int, int, int, int], config: DetectorConfig) -> float:
+    """ΔT (°C) = T_hotspot − T_baseline from true temperature (M2-1c, CR-24), where T_hotspot is a
+    robust high percentile (P99) of the proposed region — NOT the single-pixel max, which is
+    sensor-noise-sensitive — and T_baseline is the median of the surrounding field (`_local_baseline`).
+    Clamped at 0 and rounded to a documented precision. v1 uses object-signal temperature at default
+    emissivity; atmospheric/emissivity correction is a later refinement (per the M2-1a note)."""
     x1, y1, x2, y2 = box
     region = arr[y1:y2, x1:x2]
     if region.size == 0:
         region = arr
-    return max(0.0, float(region.max()) - frame_median)
+    t_hotspot = float(np.percentile(region, config.hotspot_percentile))
+    t_baseline = _local_baseline(arr, box, config)
+    return round(max(0.0, t_hotspot - t_baseline), config.delta_t_decimals)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -214,7 +254,6 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
     if arr.ndim != 2:  # defensive — a decoder must return a 2-D °C array
         arr = arr.reshape(arr.shape[0], -1)
     h, w = arr.shape
-    frame_median = float(np.median(arr))
     single_module = max(h, w) <= config.single_module_max_dim
 
     proposals = _propose(arr, config)
@@ -226,7 +265,7 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
         # module crops); the proposer only localizes the hotspot box + ΔT. Classify once.
         cls = classify_array(_stretch_u8(arr))
         box, delta = max(
-            ((b, _delta_t(arr, b, frame_median)) for b in proposals),
+            ((b, _delta_t(arr, b, config)) for b in proposals),
             key=lambda bd: bd[1],
         )
         served_cat, priority = served_priority(
@@ -245,7 +284,7 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
             if region.size == 0:
                 continue
             cls = classify_array(_stretch_u8(region))
-            delta = _delta_t(arr, b, frame_median)
+            delta = _delta_t(arr, b, config)
             served_cat, priority = served_priority(
                 cls.iec.iec_category, delta,
                 scheduled_delta=config.escalate_scheduled_delta,
@@ -263,7 +302,7 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
     x1, y1, x2, y2 = box
     return Detection(
         confidence_score=cls.confidence,
-        metric_delta=round(delta, 1),
+        metric_delta=delta,  # already robust-percentile − median baseline, rounded (CR-24)
         metric_unit="CELSIUS_DELTA",
         bounding_box=[int(x1), int(y1), int(x2), int(y2)],
         class_label=cls.label,
