@@ -13,6 +13,7 @@ dependencies = [
     "onnxruntime>=1.17",
     "numpy>=1.26",
     "pillow>=10.2",
+    "flyr>=5.0",  # FLIR radiometric decode (EUPL-1.2; used unmodified, wrapped — CR-22)
 ]
 
 [project.optional-dependencies]

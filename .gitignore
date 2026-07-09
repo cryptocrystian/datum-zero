@@ -31,6 +31,11 @@ services/inference/.venv-training/
 # graphify (regenerated artifact)
 graphify-out/
 
+# DJI Thermal SDK + the confidential DJI wrapper (DJI EULA §14, CR-22) — NEVER commit
+services/inference/app/radiometric/_dji_sdk_native.py
+services/inference/vendor/dji-thermal-sdk/
+**/libdirp*
+
 # per-machine agent / hook config (Claude Code settings + graphify hook paths) — stays local
 .claude/settings.json
 .claude/settings.local.json

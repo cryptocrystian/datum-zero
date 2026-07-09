@@ -18,6 +18,9 @@ The full architecture is in [`MANIFEST.md`](./MANIFEST.md); the *why* is in
 - 🚫 **Never bind, collect, or resell insurance.** We verify proof only; fail closed if unverified. *(CR-03, CR-10)*
 - 🚫 **No hardcoded coverage limit.** Use the per-client `requiredLiabilityLimit` profile. *(CR-02)*
 - 🚫 **No secrets in the repo, DB, or logs.** Reference AWS Secrets Manager via `secretVaultKey`.
+- 🚫 **Never commit the DJI Thermal SDK or its wrapper.** The DJI SDK (binary/source/headers) and the
+  DJI SDK wrapper module are Confidential (DJI EULA §14). The DJI decoder runs ONLY on DJI-captured
+  imagery; load the SDK from an env-configured vendored path, never the repo. *(CR-22)*
 - 🚫 **No live Remote-ID / in-browser NDAA attestation claims.** Serial-match against the verified
   airframe registry; default `isNdaaVerified = false`. *(CR-11)*
 - ✅ **Fail closed.** Unverified/insufficient state halts the pipeline — never proceed with a warning.
