@@ -16,6 +16,20 @@ from app.detector import Detection, detect
 from app.iec_mapping import served_priority
 
 
+@pytest.fixture(autouse=True)
+def _stable_classification(monkeypatch):
+    # test_delta_t exercises the ΔT MEASUREMENT, not classification. Pin a stable non-data-quality
+    # class so detect() does not reroute a synthetic frame the ONNX happens to call "Shadowing" (M2-2b).
+    import app.detector as det
+    from app.classifier import Classification
+    from app.iec_mapping import classify
+
+    monkeypatch.setattr(
+        det, "classify_array",
+        lambda *_a, **_k: Classification(label="Cell", confidence=0.9, iec=classify("Cell")),
+    )
+
+
 def _dn(celsius: float) -> int:
     return int(round((celsius + 273.15) * 100.0))
 

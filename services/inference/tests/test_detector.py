@@ -282,3 +282,38 @@ def test_committed_radiometric_tiff_fixture_decodes_to_real_delta():
     assert d.detected_format == "RADIOMETRIC_TIFF"      # sniff routed to the TIFF decoder
     assert d.radiometric is True and d.delta_provisional is False
     assert d.metric_delta == pytest.approx(35.0, abs=1.0)  # decoded 60°C hot block - 25°C baseline
+
+# ---- M2-2b Part C: Shadowing -> data-quality (invalid inspection condition, not a fault) -----------
+def _shadowing_cls():
+    from app.classifier import Classification
+    from app.iec_mapping import classify
+    return Classification(label="Shadowing", confidence=0.99, iec=classify("Shadowing"))
+
+
+def test_shadowing_routes_to_data_quality(monkeypatch):
+    import app.detector as det
+    monkeypatch.setattr(det, "classify_array", lambda *_a, **_k: _shadowing_cls())
+    out = det.detect(radiometric_tiff(base_c=25.0, hot_c=30.0))
+    assert isinstance(out, FailClosed)
+    assert out.status == "INVALID_INSPECTION_CONDITION"
+    # the DATA decoded fine (usable) — it is the CONDITION (shading) that is invalid.
+    assert out.detected_format == "RADIOMETRIC_TIFF"
+
+
+def test_process_session_shadowing_records_quality_not_anomaly(tmp_path, monkeypatch):
+    import app.detector as det
+    monkeypatch.setattr(det, "classify_array", lambda *_a, **_k: _shadowing_cls())
+    store = LocalStorage(str(tmp_path))
+    store.put("org/o1/ingest/s9/cap.tif", radiometric_tiff(base_c=25.0, hot_c=30.0))
+    anomaly_posts, quality_posts = [], []
+    result = process_session(
+        ingestion_session_id="s9",
+        organization_id="o1",
+        raw_storage_path="local://org/o1/ingest/s9/cap.tif",
+        storage=store,
+        post=lambda p: anomaly_posts.append(p),
+        post_quality=lambda p: quality_posts.append(p),
+    )
+    assert result["dispatched"] is False and result["status"] == "INVALID_INSPECTION_CONDITION"
+    assert anomaly_posts == []            # no fault, no anomaly, no dispatch
+    assert len(quality_posts) == 1 and quality_posts[0]["status"] == "INVALID_INSPECTION_CONDITION"

@@ -140,3 +140,19 @@ describe("unsupported-format demand signal (M2-1f)", () => {
     assertEvidenceFramed(label);
   });
 });
+describe("INVALID_INSPECTION_CONDITION — Shadowing routes to data-quality (M2-2b/CR-29)", () => {
+  it("copy is evidence-framed + actionable and the status is accepted", () => {
+    const r = captureQualityReason("INVALID_INSPECTION_CONDITION");
+    expect(r).toMatch(/shad/i);
+    expect(r).toMatch(/re-inspect/i);
+    for (const w of ["violation", "breach", "penalty", "liable", "enforce"]) {
+      expect(r.toLowerCase()).not.toContain(w);
+    }
+    const parsed = parseCaptureQualityCallback({
+      ingestion_session_id: "s",
+      organization_id: "o",
+      status: "INVALID_INSPECTION_CONDITION",
+    });
+    expect(parsed.ok).toBe(true);
+  });
+});

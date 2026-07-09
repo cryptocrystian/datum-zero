@@ -314,6 +314,18 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
     # Geometry validity (M2-2b/CR-29): gimbal attitude + module orientation + px/cell are not
     # available to the detector yet -> honest UNVERIFIED (never assumed valid).
     geometry_status = compute_geometry_status(None, None)
+    # Shadowing is an INVALID INSPECTION CONDITION (IEC §5.1 shading-free), not a fault (M2-2b/CR-29):
+    # route to a data-quality event — no anomaly, no category, no dispatch. The DATA is usable; the
+    # CONDITION isn't. (Closes the M2-2a Shadowing deferral.)
+    if grounded.data_quality:
+        return FailClosed(
+            status="INVALID_INSPECTION_CONDITION",
+            reason="shaded capture — re-inspect the area without shading",
+            manufacturer=result.manufacturer,
+            model=result.model,
+            detected_format=result.detected_format.name if result.detected_format else None,
+            format_fingerprint=format_fingerprint(image),
+        )
     classification = f"{STANDARD_REF} Cat {served_cat} — {cls.label}: {cls.iec.condition}"
     if served_cat > cls.iec.iec_category:  # ΔT escalated above the pattern-class category
         classification += f" ΔT {delta:.1f}°C elevates priority to {priority}."

@@ -11,13 +11,14 @@
 
 /** Parse outcomes the inference RadiometricPort fails closed on (M2-1b). Reported SEPARATELY (M2-1f):
  *  UNKNOWN_FORMAT is a coverage gap (decoder backlog); NO_RADIOMETRIC_CHANNEL is an operator re-capture. */
-export type CaptureQualityStatus = "NO_RADIOMETRIC_CHANNEL" | "UNKNOWN_FORMAT";
+export type CaptureQualityStatus = "NO_RADIOMETRIC_CHANNEL" | "UNKNOWN_FORMAT" | "INVALID_INSPECTION_CONDITION";
 
 export type RadiometricFormat = "FLIR_RJPEG" | "RADIOMETRIC_TIFF" | "DJI_RJPEG";
 
 export const CAPTURE_QUALITY_STATUSES: readonly CaptureQualityStatus[] = [
   "NO_RADIOMETRIC_CHANNEL",
   "UNKNOWN_FORMAT",
+  "INVALID_INSPECTION_CONDITION",
 ];
 
 /**
@@ -29,6 +30,9 @@ export function captureQualityReason(
   status: CaptureQualityStatus,
   _detectedFormat?: string | null,
 ): string {
+  if (status === "INVALID_INSPECTION_CONDITION") {
+    return "Shaded capture — re-inspect the area without shading (IEC TS 62446-3 §5.1 requires a shading-free inspection).";
+  }
   if (status === "NO_RADIOMETRIC_CHANNEL") {
     return "Non-radiometric capture (colorized / 8-bit only) — re-capture in radiometric / R-JPEG mode.";
   }
