@@ -48,6 +48,7 @@ function frame(over: Partial<FrameMeta> = {}, index = 0): FrameMeta {
     make: "Skydio",
     model: "X10D",
     serialNumber: "DZ-THERMAL-0001",
+    radiometricFormat: "FLIR_RJPEG", // Skydio X10D = FLIR Boson core; radiometric present by default
     ...over,
   };
 }
@@ -280,5 +281,19 @@ describe("validateCaptureSet with a registry — upload eligibility gate (M1-06)
     };
     const report = validateCaptureSet(line(2, 30), DEFAULT_VALIDATION_CONFIG, registry);
     expect(report.summary.notes.some((n) => /Telemetry serial/.test(n))).toBe(true);
+  });
+});
+
+
+describe("radiometric edge check integrates into the firewall (M2-1d, CR-11/CR-22)", () => {
+  it("a clearly non-radiometric frame is NOT upload-eligible (fail closed at the edge)", () => {
+    const report = validateCaptureSet([frame({ radiometricFormat: null })], DEFAULT_VALIDATION_CONFIG, REGISTRY);
+    expect(report.files[0].checks.radiometric.status).toBe("FAIL");
+    expect(report.files[0].uploadEligible).toBe(false);
+  });
+
+  it("a radiometric frame passes the radiometric check", () => {
+    const report = validateCaptureSet([frame({ radiometricFormat: "DJI_RJPEG" })], DEFAULT_VALIDATION_CONFIG, REGISTRY);
+    expect(report.files[0].checks.radiometric.status).toBe("PASS");
   });
 });

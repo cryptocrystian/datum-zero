@@ -10,9 +10,11 @@
  * verdict. This is a data-quality screen, never an attestation of anything (CR-11).
  */
 
+import { captureQualityReason } from "../quality/reason";
+
 export type CheckStatus = "PASS" | "WARN" | "FAIL";
 /** Quality checks (M1-05) run purely from EXIF; hardware checks (M1-06) also consult the registry. */
-export type CheckKey = "frame" | "gps" | "sunGlare" | "exposure" | "overlap";
+export type CheckKey = "frame" | "gps" | "sunGlare" | "exposure" | "overlap" | "radiometric";
 export type HardwareCheckKey = "ndaa" | "airframe";
 
 export interface CheckResult {
@@ -38,6 +40,7 @@ export interface FrameMeta {
   make: string | null; // camera/drone manufacturer (NDAA heuristic screen, M1-06)
   model: string | null;
   serialNumber: string | null; // airframe/camera serial (verified-airframe screen, M1-06)
+  radiometricFormat: string | null; // sniffed radiometric format (M2-1d) — null = clearly non-radiometric
 }
 
 // --- hardware registry screen (M1-06). The worker resolves these via an authenticated, org-scoped
@@ -205,6 +208,16 @@ export function checkFrame(f: FrameMeta): CheckResult {
   }
   return { status: "WARN", reason: `Frame metadata incomplete — missing ${missing.join(", ")}.` };
 }
+
+/** (6) Radiometric channel presence (M2-1d, CR-11/CR-22) — fail-closed at the edge on a clearly
+ *  non-radiometric capture (no thermal payload). Fast pre-filter; the SERVER decode is authoritative. */
+export function checkRadiometric(f: FrameMeta): CheckResult {
+  if (f.radiometricFormat) {
+    return { status: "PASS", reason: `Radiometric channel present (${f.radiometricFormat.replace(/_/g, " ")}).` };
+  }
+  return { status: "FAIL", reason: captureQualityReason("NO_RADIOMETRIC_CHANNEL") };
+}
+
 
 /** (3) GPS gaps — missing or null-island coordinates. */
 export function checkGps(f: FrameMeta): CheckResult {
@@ -391,6 +404,7 @@ export function validateCaptureSet(
     const prev = i > 0 ? frames[i - 1] : null;
     const checks: Record<CheckKey, CheckResult> = {
       frame: checkFrame(f),
+      radiometric: checkRadiometric(f),
       gps: checkGps(f),
       sunGlare: checkSunGlare(f, config),
       exposure: checkExposure(f, config),

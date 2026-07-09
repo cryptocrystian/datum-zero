@@ -48,6 +48,7 @@ export function frameFromExif(
   size: number,
   index: number,
   exif: ExifData | null | undefined,
+  radiometricFormat: string | null = null,
 ): FrameMeta {
   return {
     name,
@@ -66,5 +67,6 @@ export function frameFromExif(
     make: strOrNull(exif?.Make),
     model: strOrNull(exif?.Model),
     serialNumber: strOrNull(exif?.SerialNumber ?? exif?.BodySerialNumber),
+    radiometricFormat,
   };
 }

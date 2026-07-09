@@ -1,5 +1,7 @@
 import exifr from "exifr";
 import { frameFromExif } from "../../lib/field/exif";
+import { sniffRadiometricFormat } from "../../lib/field/radiometric";
+import type { RadiometricFormat } from "../../lib/quality/reason";
 import {
   validateCaptureSet,
   DEFAULT_VALIDATION_CONFIG,
@@ -79,7 +81,16 @@ ctx.onmessage = async (e) => {
     } catch {
       exif = null; // unreadable EXIF is data itself — the frame/gps/airframe checks flag it
     }
-    frames.push(frameFromExif(file.name, file.size, i, exif));
+    // Radiometric-presence pre-check (M2-1d): sniff head-byte format markers (mirrors
+    // RadiometricPort.sniff — NOT a full decode). The server decode stays authoritative.
+    let radiometricFormat: RadiometricFormat | null = null;
+    try {
+      const head = new Uint8Array(await file.slice(0, 65536).arrayBuffer());
+      radiometricFormat = sniffRadiometricFormat(head, (exif?.Make as string | undefined) ?? null);
+    } catch {
+      radiometricFormat = null; // can't sniff → the server decode fail-closes authoritatively
+    }
+    frames.push(frameFromExif(file.name, file.size, i, exif, radiometricFormat));
     ctx.postMessage({ type: "progress", done: i + 1, total: files.length });
   }
 
