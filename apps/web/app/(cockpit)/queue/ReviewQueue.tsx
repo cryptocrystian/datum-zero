@@ -73,6 +73,11 @@ export function ReviewQueue({
                     <div className="mt-1 font-mono text-[11px] text-tactical-gold">
                       +{i.metricDelta.toFixed(1)}°C Δ
                     </div>
+                    {i.calibrationStatus === "UNRELIABLE_ENVIRONMENT" && (
+                      <div className="mt-1 font-mono text-[9px] uppercase tracking-wider text-tactical-goldmuted">
+                        Env uncalibrated — category provisional
+                      </div>
+                    )}
                   </button>
                 </li>
               );

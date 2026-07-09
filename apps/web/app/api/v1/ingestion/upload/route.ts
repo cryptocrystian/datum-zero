@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { prisma, runWithOrg, CaptureModality } from "@dz/db";
 import { storage } from "@dz/storage";
 import { bindAirframe } from "@/lib/ingestion/airframe-binding";
+import { evaluateEnvironment } from "@/lib/field/environment";
 import { getSession } from "@/lib/session";
 
 // Needs Node APIs (Buffer, crypto, storage SDK) — not the edge runtime.
@@ -100,6 +101,25 @@ export async function POST(req: NextRequest) {
       metadata: { organizationId, modality, airframeSerial },
     });
 
+    // Environmental inspection-condition gate (M2-2b/CR-29) — session-level, flag-not-block. Optional
+    // telemetry from the form; absent -> not evaluated (null). SCADA DC-load is an optional fallback.
+    const numField = (v: FormDataEntryValue | null): number | null => {
+      const str = typeof v === "string" ? v.trim() : "";
+      const n = Number(str);
+      return str !== "" && Number.isFinite(n) ? n : null;
+    };
+    const surfaceDryRaw = String(form.get("surfaceDry") ?? "").trim().toLowerCase();
+    const scadaDc = numField(form.get("scadaDcLoadFraction"));
+    const calibrationStatus = evaluateEnvironment(
+      {
+        irradianceWm2: numField(form.get("irradianceWm2")),
+        windMs: numField(form.get("windMs")),
+        cloudOktas: numField(form.get("cloudOktas")),
+        surfaceDry: surfaceDryRaw === "true" ? true : surfaceDryRaw === "false" ? false : null,
+      },
+      scadaDc != null ? { dcLoadFraction: scadaDc } : null,
+    );
+
     // --- persist session + media (only reached when the airframe is verified) ---
     const session = await prisma.ingestionSession.create({
       data: {
@@ -111,6 +131,7 @@ export async function POST(req: NextRequest) {
         boundHardwareId: binding.hardwareId,
         // Mirrors the verified airframe — never hardcoded; only verified captures reach here (CR-11).
         isNdaaVerified: binding.isNdaaVerified,
+        calibrationStatus, // M2-2b/CR-29 (null when no telemetry — not evaluated)
         mediaAssets: {
           create: {
             fullStoragePath: stored.storagePath,

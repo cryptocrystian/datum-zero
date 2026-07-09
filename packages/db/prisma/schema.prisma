@@ -172,6 +172,12 @@ enum CaptureModality {
   STATIONARY_IOT_SENSOR
 }
 
+enum CalibrationStatus {
+  CALIBRATED
+  CALIBRATED_BY_SCADA_LOAD
+  UNRELIABLE_ENVIRONMENT
+}
+
 model IngestionSession {
   id             String          @id @default(uuid())
   organizationId String
@@ -181,6 +187,7 @@ model IngestionSession {
   rawStoragePath String // S3 key
 
   isValidated Boolean @default(false) // set by Infield Validator (CR-11 quality firewall)
+  calibrationStatus CalibrationStatus? // M2-2b/CR-29: session inspection-condition gate (flag not block; null = not evaluated)
 
   // --- NDAA: platform enforces via verified airframe registry, NOT in-browser detection (CR-11) ---
   isNdaaVerified  Boolean        @default(false) // default FALSE until bound to a verified airframe

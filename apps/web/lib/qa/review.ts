@@ -28,6 +28,7 @@ export interface QueueItemDTO {
   assetId: string | null;
   internalLabel: string | null;
   modality: string;
+  calibrationStatus: string | null; // M2-2b/CR-29 session inspection-condition flag
   createdAt: string;
 }
 
@@ -70,7 +71,7 @@ export async function listReviewQueue(organizationId: string): Promise<QueueItem
       analyticsCropUrl: true,
       assetId: true,
       asset: { select: { internalLabel: true } },
-      mediaAsset: { select: { ingestionSession: { select: { modality: true } } } },
+      mediaAsset: { select: { ingestionSession: { select: { modality: true, calibrationStatus: true } } } },
       createdAt: true,
     },
   });
@@ -95,6 +96,7 @@ export async function listReviewQueue(organizationId: string): Promise<QueueItem
     assetId: r.assetId,
     internalLabel: r.asset?.internalLabel ?? null,
     modality: r.mediaAsset.ingestionSession.modality,
+    calibrationStatus: r.mediaAsset.ingestionSession.calibrationStatus ?? null,
     createdAt: r.createdAt.toISOString(),
   }));
 }
