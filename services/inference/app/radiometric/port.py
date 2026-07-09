@@ -5,10 +5,10 @@ Turns a radiometric capture into a TRUE per-pixel temperature array (°C) by sni
 routing to a registered decoder. FAILS CLOSED: an unknown format or a non-radiometric (colorized-only)
 input never guesses a format and never fabricates temperature.
 
-This ticket (M2-1a) delivers the decode capability in ISOLATION — it is NOT wired into the live
-pipeline (detector.py `_load_frame`/`_delta_t` still use the M0 placeholder). Channel-preservation
-(M2-1b), real ΔT (M2-1c), the Validator tie-in (M2-1d), the e2e DoD (M2-1e), and unknown-format
-observability (M2-1f) are separate tickets.
+M2-1a delivered this decode capability in isolation; M2-1b wired it into the live pipeline —
+`detector.py` now decodes true °C here (the `_load_frame` placeholder is retired) and fails closed
+on a capture with no usable radiometric channel. Real ΔT (M2-1c), the Validator tie-in (M2-1d), the
+e2e DoD (M2-1e), and unknown-format observability (M2-1f) are separate tickets.
 """
 from __future__ import annotations
 

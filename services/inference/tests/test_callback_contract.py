@@ -4,18 +4,33 @@ must validate against the SAME canonical schema the web callback validates again
 (packages/adapters/contracts/inference-callback.schema.json) — so a field rename on this side fails
 here, not in production.
 """
+import io
 import json
 from pathlib import Path
 
 import jsonschema
+import numpy as np
 import pytest
+from PIL import Image
 
 from app.detector import detect
 from app.pipeline import build_callback_payload
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = json.loads((REPO_ROOT / "packages/adapters/contracts/inference-callback.schema.json").read_text())
-SAMPLE = (Path(__file__).resolve().parents[1] / "training/samples/Cell/4845.jpg").read_bytes()
+
+
+def _radiometric_sample() -> bytes:
+    # A synthetic 16-bit radiometric TIFF (centi-Kelvin container). detect() is radiometric-only now
+    # (CR-23) — an 8-bit JPEG would fail closed and emit no payload to validate.
+    arr = np.full((240, 300), int(round((27.0 + 273.15) * 100.0)), dtype=np.uint16)
+    arr[100:130, 150:180] = int(round((57.0 + 273.15) * 100.0))
+    buf = io.BytesIO()
+    Image.fromarray(arr, mode="I;16").save(buf, format="TIFF")
+    return buf.getvalue()
+
+
+SAMPLE = _radiometric_sample()
 
 
 def _payload():

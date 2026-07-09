@@ -1,20 +1,27 @@
 """
-DET-1b — real detector serving: hotspot proposer + DET-1a ONNX classifier + ΔT (CR-10).
+DET-1b detector serving, now on TRUE per-pixel °C (M2-1b, CR-22/CR-23).
 
-Replaces the M0-05 threshold STUB. On an IR frame:
-  (1) PROPOSER — threshold the radiometric thermal frame → candidate regions/boxes (connected
-      components). For non-radiometric (8-bit intensity) input, an intensity-based proposer with a
-      documented PROVISIONAL flag (`delta_provisional` / `radiometric=False`).
-  (2) CLASSIFY — for each proposal: crop → DET-1a ONNX classifier → class + confidence → IEC
-      TS 62446-3 category via the DET-1a mapping (`app.iec_mapping`).
-  (3) ΔT — radiometric delta vs. the local (frame) median where available; else an intensity proxy
-      (flagged provisional).
+On a radiometric capture:
+  (0) DECODE — `RadiometricPort.read_temperature(bytes)` → a 2-D float32 °C array (FLIR/TIFF/DJI).
+      Unknown-format or colorized-only input has NO usable radiometric channel → the detector FAILS
+      CLOSED (returns a `FailClosed`, never a fabricated measurement). This replaces the M0 placeholder
+      decode that treated any 16-bit/float PIL mode as if raw pixels were °C.
+  (1) PROPOSER — threshold the °C frame → candidate regions/boxes (connected components).
+  (2) CLASSIFY — for each proposal: normalize the °C crop to an 8-bit grayscale crop (`_stretch_u8`,
+      the classifier's training domain) → DET-1a ONNX classifier → class + confidence → IEC
+      TS 62446-3 category via `app.iec_mapping`.
+  (3) ΔT — radiometric delta of a region vs. the frame median, in native °C. (The median-baseline
+      upgrade is M2-1c; the algorithm here is unchanged — it now simply reads real °C.)
   (4) COMBINE — class + ΔT → the SERVED priority; a high ΔT escalates toward Cat 3 / PROMPT per the
       IEC matrix (`iec_mapping.served_priority`), never downgrades.
 
-The engine MEASURES + CLASSIFIES against the standard; the CLIENT adjudicates outcomes and a human
-QA gate approves every dispatch (CR-12) — the model raises candidates, the reviewer decides. No
-verdict language. Deterministic: the same frame bytes always yield the same evidence.
+Measurement is radiometric-only (CR-23): the 8-bit intensity→°C provisional-ΔT proxy is RETIRED —
+fabricating a ΔT from intensity is exactly what CR-22 forbids. Classification is unchanged:
+the MobileNetV3 classifier still runs on an 8-bit crop (its true domain), now normalized FROM the
+radiometric frame rather than a native 8-bit capture.
+
+The engine MEASURES + CLASSIFIES against the standard; the CLIENT adjudicates and a human QA gate
+approves every dispatch (CR-12). No verdict language. Deterministic: the same bytes → the same evidence.
 """
 from __future__ import annotations
 
@@ -26,12 +33,9 @@ from PIL import Image
 
 from app.classifier import MODEL_VERSION, classify_array
 from app.iec_mapping import STANDARD_REF, served_priority
+from app.radiometric import ParseStatus, RadiometricResult, build_default_port
 
-__all__ = ["MODEL_VERSION", "Detection", "DetectorConfig", "detect", "render_crops"]
-
-# PIL modes that carry per-pixel radiometric values (16-bit / float). Everything else is treated as
-# an 8-bit intensity proxy (ΔT flagged provisional).
-_RADIOMETRIC_MODES = {"I", "I;16", "I;16B", "I;16L", "F"}
+__all__ = ["MODEL_VERSION", "Detection", "FailClosed", "DetectorConfig", "detect", "render_crops"]
 
 
 @dataclass(frozen=True)
@@ -42,7 +46,6 @@ class DetectorConfig:
     max_work_dim: int = 256              # downscale ceiling for the connected-component scan
     single_module_max_dim: int = 160      # frames this small are treated as ONE module crop
     max_proposals: int = 8                # cap the classify fan-out (largest regions first)
-    intensity_celsius_per_dn: float = 0.1  # PROVISIONAL 8-bit DN → °C ΔT scale (CR-19)
     escalate_scheduled_delta: float = 10.0  # ΔT (°C) floor that lifts a finding to ≥ Cat 2
     escalate_prompt_delta: float = 20.0     # ΔT (°C) floor that lifts a finding to Cat 3 / PROMPT
 
@@ -63,38 +66,51 @@ class Detection:
     priority: str
     classification: str        # evidence-framed, no verdict language
     standard_ref: str
-    # --- provenance / provisional flags ---
+    # --- provenance flags (radiometric always True now; delta_provisional retained at False for
+    #     callback-contract stability, CR-23 — candidate for removal in a later contract revision) ---
     radiometric: bool
     delta_provisional: bool
     proposal_count: int
 
 
+@dataclass(frozen=True)
+class FailClosed:
+    """No usable radiometric channel — a session data-quality failure, NOT a dispatchable anomaly
+    (CR-22/CR-23). Carries the parse status + captured EXIF maker/model for later observability
+    (surfacing is M2-1d; the unknown-format QA event is M2-1f)."""
+    status: str                 # ParseStatus name: NO_RADIOMETRIC_CHANNEL | UNKNOWN_FORMAT
+    reason: str
+    manufacturer: str | None
+    model: str | None
+
+
+_FAIL_REASON = {
+    ParseStatus.NO_RADIOMETRIC_CHANNEL: "capture has no usable radiometric channel (colorized/8-bit only)",
+    ParseStatus.UNKNOWN_FORMAT: "unrecognized capture format — no radiometric decoder matched",
+}
+
+_PORT = None
+
+
+def _port():
+    """Lazily-built default RadiometricPort (FLIR, radiometric-TIFF, DJI). DJI stays env-pathed /
+    mockable — an absent SDK fails closed to NO_RADIOMETRIC_CHANNEL."""
+    global _PORT
+    if _PORT is None:
+        _PORT = build_default_port()
+    return _PORT
+
+
 # --------------------------------------------------------------------------------------------------
 # frame + array helpers
 # --------------------------------------------------------------------------------------------------
-def _load_frame(image: bytes) -> tuple[np.ndarray, bool]:
-    """Decode → (2-D float32 array, radiometric?). Radiometric keeps native temperature values;
-    intensity is loaded as 8-bit grayscale."""
-    pil = Image.open(io.BytesIO(image))
-    radiometric = pil.mode in _RADIOMETRIC_MODES
-    if radiometric:
-        arr = np.asarray(pil, dtype=np.float32)
-    else:
-        arr = np.asarray(pil.convert("L"), dtype=np.float32)
-    if arr.ndim != 2:  # defensive — collapse any stray channel dim
-        arr = arr.reshape(arr.shape[0], -1)
-    return arr, radiometric
-
-
-def _to_u8(region: np.ndarray, radiometric: bool) -> np.ndarray:
-    """Grayscale uint8 for the classifier. 8-bit intensity passes through (matches DET-1a training);
-    radiometric is min–max stretched to 0–255 (PROVISIONAL — the classifier is intensity-trained)."""
-    if not radiometric:
-        return np.clip(region, 0, 255).astype(np.uint8)
-    return _stretch_u8(region)
+def _decode_celsius(image: bytes) -> RadiometricResult:
+    """Decode a capture to true °C via the RadiometricPort. Never a PIL-mode heuristic (CR-22)."""
+    return _port().read_temperature(image)
 
 
 def _stretch_u8(region: np.ndarray) -> np.ndarray:
+    """Min–max stretch a °C region to an 8-bit grayscale crop for the (intensity-trained) classifier."""
     lo, hi = float(region.min()), float(region.max())
     if hi <= lo:
         return np.zeros(region.shape, dtype=np.uint8)
@@ -166,30 +182,40 @@ def _propose(arr: np.ndarray, config: DetectorConfig) -> list[tuple[int, int, in
     return boxes[: config.max_proposals]
 
 
-def _delta_t(arr: np.ndarray, box: tuple[int, int, int, int], frame_median: float,
-             radiometric: bool, config: DetectorConfig) -> float:
-    """ΔT of a region vs. the frame median. Radiometric → native °C; intensity → provisional proxy."""
+def _delta_t(arr: np.ndarray, box: tuple[int, int, int, int], frame_median: float) -> float:
+    """ΔT (°C) of a region vs. the frame median. Real radiometric temperature only (CR-23). The
+    region-vs-local-median baseline upgrade is M2-1c — the algorithm is unchanged here."""
     x1, y1, x2, y2 = box
     region = arr[y1:y2, x1:x2]
     if region.size == 0:
         region = arr
-    raw = max(0.0, float(region.max()) - frame_median)
-    return raw if radiometric else raw * config.intensity_celsius_per_dn
+    return max(0.0, float(region.max()) - frame_median)
 
 
 # --------------------------------------------------------------------------------------------------
 # detection
 # --------------------------------------------------------------------------------------------------
-def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection:
-    """Propose hotspots → classify → ΔT → served priority. Deterministic evidence + classification."""
+def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection | FailClosed:
+    """Decode true °C → propose → classify → ΔT → served priority. Fails closed (returns FailClosed,
+    no fabricated measurement) when the capture has no usable radiometric channel (CR-22/CR-23)."""
     if not image:
         raise ValueError("empty image: nothing to detect")
 
-    arr, radiometric = _load_frame(image)
+    result = _decode_celsius(image)
+    if result.status != ParseStatus.OK:
+        return FailClosed(
+            status=result.status.name,
+            reason=_FAIL_REASON.get(result.status, result.status.name),
+            manufacturer=result.manufacturer,
+            model=result.model,
+        )
+
+    arr = np.asarray(result.temperature_c, dtype=np.float32)
+    if arr.ndim != 2:  # defensive — a decoder must return a 2-D °C array
+        arr = arr.reshape(arr.shape[0], -1)
     h, w = arr.shape
     frame_median = float(np.median(arr))
     single_module = max(h, w) <= config.single_module_max_dim
-    delta_provisional = not radiometric
 
     proposals = _propose(arr, config)
     if not proposals:  # uniform / No-Anomaly frame → the whole frame is the one proposal
@@ -198,9 +224,9 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection:
     if single_module:
         # The frame IS a single module crop — classify the WHOLE frame (matches DET-1a training on
         # module crops); the proposer only localizes the hotspot box + ΔT. Classify once.
-        cls = classify_array(_to_u8(arr, radiometric))
+        cls = classify_array(_stretch_u8(arr))
         box, delta = max(
-            ((b, _delta_t(arr, b, frame_median, radiometric, config)) for b in proposals),
+            ((b, _delta_t(arr, b, frame_median)) for b in proposals),
             key=lambda bd: bd[1],
         )
         served_cat, priority = served_priority(
@@ -218,8 +244,8 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection:
             region = arr[y1:y2, x1:x2]
             if region.size == 0:
                 continue
-            cls = classify_array(_to_u8(region, radiometric))
-            delta = _delta_t(arr, b, frame_median, radiometric, config)
+            cls = classify_array(_stretch_u8(region))
+            delta = _delta_t(arr, b, frame_median)
             served_cat, priority = served_priority(
                 cls.iec.iec_category, delta,
                 scheduled_delta=config.escalate_scheduled_delta,
@@ -245,8 +271,8 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection:
         priority=priority,
         classification=classification,
         standard_ref=STANDARD_REF,
-        radiometric=radiometric,
-        delta_provisional=delta_provisional,
+        radiometric=True,
+        delta_provisional=False,
         proposal_count=len(proposals),
     )
 
@@ -274,8 +300,12 @@ def _colorize_png(region: np.ndarray) -> bytes:
 
 def render_crops(image: bytes, box: list[int] | None = None) -> tuple[bytes, bytes]:
     """Render the ACTUAL visual (grayscale) + analytics (thermal-ramp) crops of the detection region
-    as PNG bytes. Deterministic. Defaults to the whole frame when no box is given."""
-    arr, radiometric = _load_frame(image)
+    as PNG bytes, from the decoded °C frame. Deterministic. Called only on a successful detection;
+    a capture with no radiometric channel raises (the pipeline never reaches here on fail-closed)."""
+    result = _decode_celsius(image)
+    if result.status != ParseStatus.OK:
+        raise ValueError(f"cannot render crops: {result.status.name}")
+    arr = np.asarray(result.temperature_c, dtype=np.float32)
     h, w = arr.shape
     if box is None:
         x1, y1, x2, y2 = 0, 0, w, h
@@ -286,4 +316,4 @@ def render_crops(image: bytes, box: list[int] | None = None) -> tuple[bytes, byt
     x2 = max(x1 + 1, min(int(x2), w))
     y2 = max(y1 + 1, min(int(y2), h))
     region = arr[y1:y2, x1:x2]
-    return _png(_to_u8(region, radiometric)), _colorize_png(region)
+    return _png(_stretch_u8(region)), _colorize_png(region)

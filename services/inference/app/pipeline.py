@@ -1,22 +1,29 @@
 """
-Inference pipeline: raw capture → real detection (DET-1b) → crops → callback.
+Inference pipeline: raw capture → real detection (DET-1b on true °C) → crops → callback.
 
-Flow: download the raw frame via the StoragePort, run the real detector (hotspot proposer + DET-1a
-classifier + ΔT), write the ACTUAL pixel crops back through the StoragePort, build the callback
-payload, and POST it to the Next.js callback which persists the Anomaly UNBOUND (CR-16).
+Flow: download the RAW radiometric capture via the StoragePort (source of record, byte-for-byte —
+CR-22), run the detector (RadiometricPort decode → hotspot proposer + DET-1a classifier + ΔT), write
+the ACTUAL pixel crops back through the StoragePort as SEPARATE display assets (the detector never
+reads them), build the callback payload, and POST it to the Next.js callback which persists the
+Anomaly UNBOUND (CR-16).
+
+Fail closed (CR-22/CR-23): if the capture has no usable radiometric channel (unknown format or
+colorized-only), `detect()` returns a `FailClosed` — the pipeline does NOT fabricate a measurement,
+does NOT write crops, and does NOT POST an anomaly. It returns a structured data-quality outcome
+(status + reason + EXIF maker/model). This is a session data-quality failure, not a PENDING_QA
+anomaly; operator surfacing is M2-1d and the unknown-format QA event is M2-1f.
 
 The payload carries the MEASUREMENT layer (box, ΔT, confidence, crops) AND the standards
-CLASSIFICATION the model now raises (class + IEC TS 62446-3 category + priority) — all
-evidence-framed, no verdict words (CR-12). The model raises candidates; the human QA gate still
-adjudicates every dispatch (CR-12). The callback CONTRACT is unchanged: the extra classification
-fields are an additive superset the route may consume; persistence + spatial binding stay web-side.
+CLASSIFICATION the model raises (class + IEC TS 62446-3 category + priority) — all evidence-framed, no
+verdict words (CR-12). The model raises candidates; the human QA gate still adjudicates every dispatch
+(CR-12). The callback CONTRACT is unchanged.
 """
 from __future__ import annotations
 
 import os
 from typing import Any, Callable
 
-from .detector import MODEL_VERSION, detect, render_crops
+from .detector import MODEL_VERSION, FailClosed, detect, render_crops
 from .storage import StoragePort, get_storage, locator_to_key
 
 # Fixture coordinates for the M0 sample — a point on the seeded APEX_SOLAR grid so M0-06 can bind
@@ -63,7 +70,7 @@ def build_callback_payload(
             "priority": detection.priority,
             "classification": detection.classification,
             "standard_ref": detection.standard_ref,
-            # provenance / provisional flags
+            # provenance flags (radiometric always True; delta_provisional retained at False, CR-23)
             "radiometric": detection.radiometric,
             "delta_provisional": detection.delta_provisional,
             "latitude": f"{lat:.6f}",
@@ -101,13 +108,34 @@ def process_session(
     storage: StoragePort | None = None,
     post: Poster | None = None,
 ) -> dict[str, Any]:
-    """Run detection for one ingestion session and deliver the evidence to the callback."""
+    """Run detection for one ingestion session and deliver the evidence to the callback.
+
+    On a usable radiometric capture: writes crops + POSTs the anomaly payload, returns
+    ``{"status": "OK", "dispatched": True, "payload", "callback"}``.
+    Fail closed on no usable radiometric channel: NO crops, NO POST — returns
+    ``{"status": <parse status>, "dispatched": False, "reason", "manufacturer", "model",
+    "payload": None, "callback": None}`` (CR-22/CR-23)."""
     store = storage or get_storage()
     poster = post or _post_callback
 
     image = store.get(locator_to_key(raw_storage_path))
-    detection = detect(image)
+    outcome = detect(image)
 
+    if isinstance(outcome, FailClosed):
+        # No usable radiometric channel — do NOT fabricate, do NOT dispatch (CR-22/CR-23).
+        return {
+            "status": outcome.status,
+            "dispatched": False,
+            "reason": outcome.reason,
+            "manufacturer": outcome.manufacturer,
+            "model": outcome.model,
+            "ingestion_session_id": ingestion_session_id,
+            "organization_id": organization_id,
+            "payload": None,
+            "callback": None,
+        }
+
+    detection = outcome
     visual_bytes, analytics_bytes = render_crops(image, detection.bounding_box)
     base = f"org/{organization_id}/anomalies/{ingestion_session_id}"
     visual_crop_url = store.put(f"{base}/visual_crop.png", visual_bytes, "image/png")
@@ -125,4 +153,4 @@ def process_session(
         captured_at=captured_at,
     )
     callback_result = poster(payload)
-    return {"payload": payload, "callback": callback_result}
+    return {"status": "OK", "dispatched": True, "payload": payload, "callback": callback_result}

@@ -141,3 +141,22 @@ def test_manufacturer_model_captured_even_on_failure():
     assert res.detected_format == RadiometricFormat.DJI_RJPEG
     assert res.manufacturer is not None and "DJI" in res.manufacturer.upper()
     assert res.model == "Zenmuse H20T"
+
+
+# ---- carried validation debt (CR-22): real Autel 640T / InfiRay TIFF calibration (skip-if-absent) --
+AUTEL_SAMPLE = Path(os.environ.get("AUTEL_SAMPLE_PATH", str(Path(__file__).parent / "fixtures" / "autel_640t_sample.tiff")))
+
+
+@pytest.mark.skipif(not AUTEL_SAMPLE.exists(), reason="no Autel 640T / InfiRay radiometric-TIFF sample present — local integration only")
+def test_tiff_centikelvin_calibration_against_real_sample():
+    # tiff.py assumes centi-Kelvin (0.01 K/DN). This checks the scale/offset against a GENUINE file,
+    # not just the synthetic fixture authored to match it. If it fails, the fix is a one-line constant
+    # in tiff.py (KELVIN_PER_DN / KELVIN_OFFSET).
+    res = build_default_port().read_temperature(AUTEL_SAMPLE.read_bytes())
+    assert res.status == ParseStatus.OK
+    assert res.detected_format == RadiometricFormat.RADIOMETRIC_TIFF
+    t = res.temperature_c
+    assert t is not None and t.ndim == 2
+    # a real terrestrial thermal scene lands in a plausible °C band — a wrong scale/offset (raw Kelvin,
+    # centi-Celsius, etc.) would push values far outside it.
+    assert -40.0 <= float(t.min()) and float(t.max()) <= 200.0
