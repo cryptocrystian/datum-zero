@@ -1,15 +1,17 @@
 /**
- * Capture-quality persistence + read model (M2-1d, CR-11/CR-22/CR-25). Server-only (imports Prisma +
- * node:crypto). Every query is organizationId-scoped (multi-tenant native) and runs under the RLS
- * GUC via `runWithOrg` at the call site. A CaptureQualityEvent records a REJECTED capture — it is
- * NEVER turned into an Anomaly or a WorkOrderDispatch (no dispatch path exists by construction).
+ * Capture-quality persistence + read model (M2-1d/M2-1f, CR-11/CR-22/CR-25/CR-26). Server-only
+ * (imports Prisma + node:crypto). Every query is organizationId-scoped (multi-tenant native) and runs
+ * under the RLS GUC via `runWithOrg` at the call site. A CaptureQualityEvent records a REJECTED
+ * capture — it is NEVER turned into an Anomaly or a WorkOrderDispatch (no dispatch path by construction).
  */
 import { createHash } from "node:crypto";
 import { prisma } from "@dz/db";
 import {
   type CaptureQualityEventDTO,
   type CaptureQualityInput,
+  type UnsupportedFormatDTO,
   toCaptureQualityEventDTO,
+  toUnsupportedFormatDTO,
 } from "./reason";
 
 /** Stable id from session+status so an inference re-delivery upserts instead of duplicating. */
@@ -29,6 +31,7 @@ export async function recordCaptureQualityEvent(input: CaptureQualityInput): Pro
     manufacturer: input.manufacturer,
     model: input.model,
     detectedFormat: input.detectedFormat,
+    formatFingerprint: input.formatFingerprint,
   };
   return prisma.captureQualityEvent.upsert({
     where: { id },
@@ -52,8 +55,26 @@ export async function listCaptureQualityEvents(organizationId: string): Promise<
       manufacturer: true,
       model: true,
       detectedFormat: true,
+      formatFingerprint: true,
       createdAt: true,
     },
   });
   return rows.map(toCaptureQualityEventDTO);
+}
+
+/**
+ * M2-1f — the unsupported-format demand signal: UNKNOWN_FORMAT events grouped by manufacturer / model
+ * / format fingerprint, most-frequent first, org-scoped. This ranks the decoder long tail so a new
+ * decoder is built on measured demand (CR-22 / CR-14). NO_RADIOMETRIC_CHANNEL is excluded — that is an
+ * operator re-capture problem, not a coverage gap.
+ */
+export async function listUnsupportedFormatCounts(organizationId: string): Promise<UnsupportedFormatDTO[]> {
+  const rows = await prisma.captureQualityEvent.groupBy({
+    by: ["manufacturer", "model", "formatFingerprint"],
+    where: { organizationId, status: "UNKNOWN_FORMAT" },
+    _count: { id: true },
+    orderBy: { _count: { id: "desc" } },
+    take: 50,
+  });
+  return rows.map(toUnsupportedFormatDTO);
 }

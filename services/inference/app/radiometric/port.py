@@ -110,6 +110,27 @@ class RadiometricPort:
         return RadiometricResult(ParseStatus.UNKNOWN_FORMAT, None, None, manufacturer, model)
 
 
+def format_fingerprint(image_bytes: bytes) -> str:
+    """A lightweight, no-decode container + marker fingerprint for observability (M2-1f). Groups
+    the unknown-format long tail (manufacturer/model live on the event separately) so a decoder is
+    built on measured demand, not speculation (CR-22 / CR-14). Never persists an image payload."""
+    head = image_bytes[:8]
+    if head[:2] == b"\xff\xd8":
+        container = "JPEG"
+    elif head[:4] in (b"II*\x00", b"MM\x00*"):
+        container = "TIFF"
+    elif head[:8] == b"\x89PNG\r\n\x1a\n":
+        container = "PNG"
+    elif not image_bytes:
+        container = "empty"
+    else:
+        container = "unknown(" + head[:4].hex() + ")"
+    markers = []
+    if b"FLIR\x00" in image_bytes[:65536]:
+        markers.append("FLIR-APP1")
+    return " \u00b7 ".join([container, *markers])
+
+
 def build_default_port() -> RadiometricPort:
     """Default registry. Sniff order: FLIR, radiometric-TIFF, DJI (specific makers before generic
     containers). Imported lazily so the package loads without flyr / the DJI SDK present."""

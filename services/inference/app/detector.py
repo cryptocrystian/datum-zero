@@ -35,7 +35,7 @@ from PIL import Image
 
 from app.classifier import MODEL_VERSION, classify_array
 from app.iec_mapping import STANDARD_REF, served_priority
-from app.radiometric import ParseStatus, RadiometricResult, build_default_port
+from app.radiometric import ParseStatus, RadiometricResult, build_default_port, format_fingerprint
 
 __all__ = ["MODEL_VERSION", "Detection", "FailClosed", "DetectorConfig", "detect", "render_crops"]
 
@@ -93,6 +93,7 @@ class FailClosed:
     manufacturer: str | None
     model: str | None
     detected_format: str | None  # RadiometricFormat name when a decoder matched, else None
+    format_fingerprint: str      # no-decode container/marker fingerprint (M2-1f observability)
 
 
 _FAIL_REASON = {
@@ -251,6 +252,7 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
             manufacturer=result.manufacturer,
             model=result.model,
             detected_format=result.detected_format.name if result.detected_format else None,
+            format_fingerprint=format_fingerprint(image),
         )
 
     arr = np.asarray(result.temperature_c, dtype=np.float32)

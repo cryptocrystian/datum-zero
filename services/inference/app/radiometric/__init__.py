@@ -10,6 +10,7 @@ from .port import (
     RadiometricResult,
     build_default_port,
     extract_exif,
+    format_fingerprint,
 )
 from .tiff import RadiometricTiffDecoder
 
@@ -22,6 +23,7 @@ __all__ = [
     "NoRadiometricChannel",
     "build_default_port",
     "extract_exif",
+    "format_fingerprint",
     "FlirRjpegDecoder",
     "planck_raw_to_celsius",
     "RadiometricTiffDecoder",

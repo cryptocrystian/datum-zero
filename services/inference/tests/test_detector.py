@@ -239,6 +239,7 @@ def test_process_session_fails_closed_records_quality_event_not_anomaly(tmp_path
     assert q["status"] == "UNKNOWN_FORMAT"
     assert q["ingestion_session_id"] == "s1" and q["organization_id"] == "o1"
     assert q["detected_format"] is None  # no decoder matched a plain JPEG
+    assert q["format_fingerprint"] == "JPEG"  # actionable container signal for the demand aggregate
     assert result["quality_callback"] == {"captureQualityEventId": "cqe"}
     with pytest.raises(FileNotFoundError):  # no crops written on fail-closed
         store.get("org/o1/anomalies/s1/visual_crop.png")
@@ -261,3 +262,4 @@ def test_fail_closed_quality_payload_carries_sniffed_format(tmp_path):
     q = quality_posts[0]
     assert q["status"] == "NO_RADIOMETRIC_CHANNEL"
     assert q["detected_format"] == "RADIOMETRIC_TIFF"
+    assert q["format_fingerprint"] == "TIFF"

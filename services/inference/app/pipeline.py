@@ -151,6 +151,7 @@ def process_session(
             "manufacturer": outcome.manufacturer,
             "model": outcome.model,
             "detected_format": outcome.detected_format,
+            "format_fingerprint": outcome.format_fingerprint,
         }
         quality_result = quality_poster(quality_payload)
         return {

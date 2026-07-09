@@ -1,7 +1,7 @@
 /**
  * Capture-quality — pure, dependency-free vocabulary for the radiometric data-quality outcome
- * (M2-1d, CR-11/CR-22/CR-25). No Prisma, no Node builtins — safe to import from BOTH the cockpit
- * (server) and the Infield Validator PWA (client), so the operator copy and the edge copy stay
+ * (M2-1d/M2-1f, CR-11/CR-22/CR-25/CR-26). No Prisma, no Node builtins — safe to import from BOTH the
+ * cockpit (server) and the Infield Validator PWA (client), so the operator copy and the edge copy stay
  * identical.
  *
  * Language is EVIDENCE-FRAMED (CR-12): an observation + an actionable re-capture recommendation.
@@ -9,7 +9,8 @@
  * data-quality event, never an anomaly and never dispatchable.
  */
 
-/** Parse outcomes the inference RadiometricPort fails closed on (M2-1b). */
+/** Parse outcomes the inference RadiometricPort fails closed on (M2-1b). Reported SEPARATELY (M2-1f):
+ *  UNKNOWN_FORMAT is a coverage gap (decoder backlog); NO_RADIOMETRIC_CHANNEL is an operator re-capture. */
 export type CaptureQualityStatus = "NO_RADIOMETRIC_CHANNEL" | "UNKNOWN_FORMAT";
 
 export type RadiometricFormat = "FLIR_RJPEG" | "RADIOMETRIC_TIFF" | "DJI_RJPEG";
@@ -43,6 +44,7 @@ export interface CaptureQualityInput {
   manufacturer: string | null;
   model: string | null;
   detectedFormat: string | null;
+  formatFingerprint: string | null;
 }
 
 export type ParseResult =
@@ -85,6 +87,7 @@ export function parseCaptureQualityCallback(body: unknown): ParseResult {
       manufacturer: nonEmptyString(b.manufacturer),
       model: nonEmptyString(b.model),
       detectedFormat,
+      formatFingerprint: nonEmptyString(b.format_fingerprint),
     },
   };
 }
@@ -98,6 +101,7 @@ export interface CaptureQualityEventDTO {
   manufacturer: string | null;
   model: string | null;
   detectedFormat: string | null;
+  formatFingerprint: string | null;
   createdAt: string;
 }
 
@@ -110,6 +114,7 @@ export function toCaptureQualityEventDTO(row: {
   manufacturer: string | null;
   model: string | null;
   detectedFormat: string | null;
+  formatFingerprint: string | null;
   createdAt: Date | string;
 }): CaptureQualityEventDTO {
   return {
@@ -120,6 +125,39 @@ export function toCaptureQualityEventDTO(row: {
     manufacturer: row.manufacturer,
     model: row.model,
     detectedFormat: row.detectedFormat,
+    formatFingerprint: row.formatFingerprint,
     createdAt: typeof row.createdAt === "string" ? row.createdAt : row.createdAt.toISOString(),
   };
+}
+
+// --- M2-1f: the unsupported-format demand signal (decoder long tail, measured not guessed) ----------
+
+/** One grouped row of the unsupported-format aggregate (UNKNOWN_FORMAT, by device + fingerprint). */
+export interface UnsupportedFormatDTO {
+  manufacturer: string | null;
+  model: string | null;
+  formatFingerprint: string | null;
+  count: number;
+}
+
+/** Pure Prisma-groupBy-row → DTO. The row shape matches groupBy([manufacturer, model,
+ *  formatFingerprint]) with _count.id on CaptureQualityEvent. */
+export function toUnsupportedFormatDTO(row: {
+  manufacturer: string | null;
+  model: string | null;
+  formatFingerprint: string | null;
+  _count: { id: number };
+}): UnsupportedFormatDTO {
+  return {
+    manufacturer: row.manufacturer,
+    model: row.model,
+    formatFingerprint: row.formatFingerprint,
+    count: row._count.id,
+  };
+}
+
+/** Operator label for one unsupported-format group — evidence-framed, no verdict (CR-12). */
+export function unsupportedFormatLabel(g: UnsupportedFormatDTO): string {
+  const device = [g.manufacturer ?? "Unknown maker", g.model].filter((s): s is string => !!s).join(" ");
+  return `${device} — ${g.formatFingerprint ?? "unrecognized container"}`;
 }

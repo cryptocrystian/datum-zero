@@ -20,6 +20,7 @@ ROUTE = (ROOT / "apps/web/app/api/v1/inference/capture-quality/route.ts").read_t
 EVENTS = (ROOT / "apps/web/lib/quality/events.ts").read_text()
 REASON = (ROOT / "apps/web/lib/quality/reason.ts").read_text()
 STRIP = (ROOT / "apps/web/app/(cockpit)/queue/CaptureQualityStrip.tsx").read_text()
+AGG = (ROOT / "apps/web/app/(cockpit)/queue/UnsupportedFormats.tsx").read_text()
 
 VERDICT_WORDS = ("violation", "breach", "back-charge", "penalty", "liable", "enforce")
 
@@ -71,7 +72,16 @@ def test_callback_and_lib_never_create_an_anomaly_or_dispatch():
 
 
 def test_capture_quality_copy_is_evidence_framed():
-    for src, name in ((REASON, "reason"), (STRIP, "strip"), (ROUTE, "route")):
+    for src, name in ((REASON, "reason"), (STRIP, "strip"), (ROUTE, "route"), (AGG, "unsupported-formats")):
         low = src.lower()
         for w in VERDICT_WORDS:
             assert w not in low, f"{name}: verdict word {w!r} in capture-quality copy (CR-12)"
+
+
+def test_unsupported_format_aggregate_is_unknown_only_and_org_scoped():
+    # The demand signal counts UNKNOWN_FORMAT (coverage gaps) — NOT colorized captures — grouped by
+    # device + fingerprint, org-scoped (M2-1f, CR-11/CR-22/CR-26).
+    assert "listUnsupportedFormatCounts" in EVENTS, "the unsupported-format aggregate must exist"
+    assert 'status: "UNKNOWN_FORMAT"' in EVENTS, "the aggregate must count UNKNOWN_FORMAT, not NO_RADIOMETRIC_CHANNEL"
+    assert "organizationId" in EVENTS, "the aggregate must be org-scoped (multi-tenant native)"
+    assert 'by: ["manufacturer", "model", "formatFingerprint"]' in EVENTS, "must group by device + fingerprint"

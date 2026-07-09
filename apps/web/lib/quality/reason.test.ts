@@ -3,6 +3,8 @@ import {
   captureQualityReason,
   parseCaptureQualityCallback,
   toCaptureQualityEventDTO,
+  toUnsupportedFormatDTO,
+  unsupportedFormatLabel,
   CAPTURE_QUALITY_STATUSES,
 } from "./reason";
 
@@ -42,6 +44,7 @@ describe("parseCaptureQualityCallback — validate + normalize, fail closed", ()
     manufacturer: "DJI",
     model: "Zenmuse H20T",
     detected_format: null,
+    format_fingerprint: "JPEG",
   };
 
   it("accepts a well-formed body and derives the reason (payload reason is ignored)", () => {
@@ -53,6 +56,7 @@ describe("parseCaptureQualityCallback — validate + normalize, fail closed", ()
     expect(r.value.status).toBe("NO_RADIOMETRIC_CHANNEL");
     expect(r.value.manufacturer).toBe("DJI");
     expect(r.value.model).toBe("Zenmuse H20T");
+    expect(r.value.formatFingerprint).toBe("JPEG");
     // reason is DERIVED, not taken from the payload — single source of truth.
     expect(r.value.reason).toBe(captureQualityReason("NO_RADIOMETRIC_CHANNEL"));
     expect(r.value.reason).not.toContain("attacker");
@@ -76,11 +80,12 @@ describe("parseCaptureQualityCallback — validate + normalize, fail closed", ()
     expect(r.value.manufacturer).toBeNull();
     expect(r.value.model).toBeNull();
     expect(r.value.detectedFormat).toBeNull();
+    expect(r.value.formatFingerprint).toBeNull();
   });
 });
 
 describe("toCaptureQualityEventDTO — pure row → DTO", () => {
-  it("serializes createdAt and carries the evidence-framed reason", () => {
+  it("serializes createdAt and carries the fingerprint + evidence-framed reason", () => {
     const dto = toCaptureQualityEventDTO({
       id: "e1",
       ingestionSessionId: "s1",
@@ -89,10 +94,49 @@ describe("toCaptureQualityEventDTO — pure row → DTO", () => {
       manufacturer: "DJI",
       model: null,
       detectedFormat: null,
+      formatFingerprint: "JPEG",
       createdAt: new Date("2026-07-08T18:00:00Z"),
     });
     expect(dto.createdAt).toBe("2026-07-08T18:00:00.000Z");
     expect(dto.status).toBe("NO_RADIOMETRIC_CHANNEL");
+    expect(dto.formatFingerprint).toBe("JPEG");
     assertEvidenceFramed(dto.reason);
+  });
+});
+
+describe("unsupported-format demand signal (M2-1f)", () => {
+  it("toUnsupportedFormatDTO extracts the group count", () => {
+    const dto = toUnsupportedFormatDTO({
+      manufacturer: "Autel Robotics",
+      model: "EVO II 640T",
+      formatFingerprint: "TIFF",
+      _count: { id: 7 },
+    });
+    expect(dto).toEqual({
+      manufacturer: "Autel Robotics",
+      model: "EVO II 640T",
+      formatFingerprint: "TIFF",
+      count: 7,
+    });
+  });
+
+  it("unsupportedFormatLabel is evidence-framed and names the device + container", () => {
+    const label = unsupportedFormatLabel({
+      manufacturer: "Autel Robotics",
+      model: "EVO II 640T",
+      formatFingerprint: "TIFF",
+      count: 7,
+    });
+    expect(label).toContain("Autel Robotics");
+    expect(label).toContain("EVO II 640T");
+    expect(label).toContain("TIFF");
+    assertEvidenceFramed(label);
+  });
+
+  it("falls back gracefully when the maker/model/fingerprint are unknown", () => {
+    const label = unsupportedFormatLabel({ manufacturer: null, model: null, formatFingerprint: null, count: 3 });
+    expect(label).toMatch(/unknown maker/i);
+    expect(label).toMatch(/unrecognized container/i);
+    assertEvidenceFramed(label);
   });
 });

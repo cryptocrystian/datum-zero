@@ -473,6 +473,7 @@ model CaptureQualityEvent {
   manufacturer       String?
   model              String?
   detectedFormat     String? // FLIR_RJPEG | RADIOMETRIC_TIFF | DJI_RJPEG | null
+  formatFingerprint  String? // M2-1f: no-decode container/marker signal for the unsupported-format aggregate
   createdAt          DateTime         @default(now())
 
   @@index([organizationId, createdAt])

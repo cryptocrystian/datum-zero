@@ -160,3 +160,15 @@ def test_tiff_centikelvin_calibration_against_real_sample():
     # a real terrestrial thermal scene lands in a plausible °C band — a wrong scale/offset (raw Kelvin,
     # centi-Celsius, etc.) would push values far outside it.
     assert -40.0 <= float(t.min()) and float(t.max()) <= 200.0
+
+
+# ---- format fingerprint (M2-1f) — no-decode container/marker for the unknown-format aggregate -------
+def test_format_fingerprint_container_and_marker():
+    from app.radiometric import format_fingerprint
+
+    assert format_fingerprint(plain_jpeg()) == "JPEG"
+    assert format_fingerprint(tiff16(30000)) == "TIFF"
+    assert format_fingerprint(b"") == "empty"
+    assert format_fingerprint(b"\x00\x01\x02\x03rest").startswith("unknown(")
+    # a FLIR APP1 marker surfaces even on a JPEG a decoder can't fully parse
+    assert "FLIR-APP1" in format_fingerprint(b"\xff\xd8" + b"----FLIR\x00----")
