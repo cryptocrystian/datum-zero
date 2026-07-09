@@ -53,6 +53,7 @@
         "requires_safety_review": { "type": "boolean" },
         "iec_normalization": { "type": ["string", "null"] },
         "iec_provenance": { "type": ["string", "null"] },
+        "geometry_status": { "type": ["string", "null"] },
         "radiometric": { "type": "boolean" },
         "delta_provisional": { "type": "boolean" },
         "latitude": { "type": ["string", "null"] },

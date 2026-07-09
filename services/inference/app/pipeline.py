@@ -76,6 +76,7 @@ def build_callback_payload(
             "requires_safety_review": detection.requires_safety_review,
             "iec_normalization": detection.iec_normalization,
             "iec_provenance": detection.iec_provenance,
+            "geometry_status": detection.geometry_status,
             # provenance flags (radiometric always True; delta_provisional retained at False, CR-23)
             "radiometric": detection.radiometric,
             "delta_provisional": detection.delta_provisional,

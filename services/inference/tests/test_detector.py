@@ -165,6 +165,7 @@ def test_payload_carries_classification_and_stays_evidence_framed():
     assert det["iec_normalization"] == "UNAVAILABLE"  # no irradiance available to the detector yet
     assert "CD / pending verification" in det["iec_provenance"]
     assert isinstance(det["requires_safety_review"], bool)
+    assert det["geometry_status"] == "UNVERIFIED"  # geometry validity (M2-2b/CR-29) — inputs not wired yet
     # HARD STOP: no verdict language anywhere in the served output (CR-12).
     flat = str(payload).lower()
     for forbidden in VERDICT_WORDS:

@@ -35,6 +35,7 @@ from PIL import Image
 
 from app.classifier import MODEL_VERSION, classify_array
 from app.iec_mapping import STANDARD_REF, iec_category, served_priority
+from app.geometry import geometry_status as compute_geometry_status
 from app.radiometric import ParseStatus, RadiometricResult, build_default_port, format_fingerprint
 
 __all__ = ["MODEL_VERSION", "Detection", "FailClosed", "DetectorConfig", "detect", "render_crops"]
@@ -85,6 +86,7 @@ class Detection:
     requires_safety_review: bool
     iec_normalization: str
     iec_provenance: str
+    geometry_status: str  # per-capture geometry validity (M2-2b/CR-29); UNVERIFIED until gimbal+registry wired
     proposal_count: int
 
 
@@ -309,6 +311,9 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
     # Grounded objective IEC Category (M2-2a/CR-28) — pattern + normalized ΔT; CATEGORY ONLY (CR-15).
     # Irradiance (G) is not yet available to the detector, so normalization is honestly UNAVAILABLE.
     grounded = iec_category(cls.label, delta)
+    # Geometry validity (M2-2b/CR-29): gimbal attitude + module orientation + px/cell are not
+    # available to the detector yet -> honest UNVERIFIED (never assumed valid).
+    geometry_status = compute_geometry_status(None, None)
     classification = f"{STANDARD_REF} Cat {served_cat} — {cls.label}: {cls.iec.condition}"
     if served_cat > cls.iec.iec_category:  # ΔT escalated above the pattern-class category
         classification += f" ΔT {delta:.1f}°C elevates priority to {priority}."
@@ -331,6 +336,7 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
         requires_safety_review=grounded.requires_safety_review,
         iec_normalization=grounded.normalization,
         iec_provenance=grounded.provenance,
+        geometry_status=geometry_status,
         proposal_count=len(proposals),
     )
 
