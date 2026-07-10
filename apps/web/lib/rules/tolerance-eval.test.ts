@@ -1,17 +1,32 @@
 import { describe, it, expect } from "vitest";
-import { applyPolicy, buildRecommendation, deltaCategory, modelCategory, type PolicySpec } from "./tolerance-eval";
+import {
+  applyPolicy,
+  buildRecommendation,
+  priorityForCategory,
+  DEFAULT_CATEGORY_PRIORITY,
+  type PolicySpec,
+  type ModelFinding,
+} from "./tolerance-eval";
 
 // The verdict-language guard (mirrors tests/guardrails). Defining it here needs the literal terms.
 const VERDICT = /\b(violation|breach|back[- ]?charge|penalty|liable|guilty)\b/i; // guardrail:allow-verdict-term
 
 const RULE: PolicySpec = {
-  triggerMetric: "Temp_Delta_Threshold",
-  operator: ">=",
-  thresholdValue: 10,
+  categoryPriority: DEFAULT_CATEGORY_PRIORITY,
   routeTargets: ["GENERIC_WEBHOOK", "NATIVE_JIRA"],
   standardRef: "IEC TS 62446-3",
   standardVersion: "2017",
 };
+
+function finding(iecCategory: 1 | 2 | 3 | null): ModelFinding {
+  return {
+    iecCategory,
+    classification: iecCategory ? `IEC TS 62446-3 Cat ${iecCategory} — Cell: single hot cell` : "IEC TS 62446-3 — No-Anomaly",
+    metricDelta: 18.4,
+    confidenceScore: 0.968,
+    standardRef: "IEC TS 62446-3",
+  };
+}
 
 describe("recommendation generator is evidence-framed, never a verdict (CR-12)", () => {
   for (const delta of [10, 18.4, 25, 45, -15]) {
@@ -32,61 +47,50 @@ describe("recommendation generator is evidence-framed, never a verdict (CR-12)",
   }
 });
 
-describe("modelCategory reads the MODEL's IEC category (model owns the type — CR-19)", () => {
-  it("parses the category from the model classification string", () => {
-    expect(modelCategory("IEC TS 62446-3 Cat 3 — Diode: bypass diode activated")).toBe(3);
-    expect(modelCategory("IEC TS 62446-3 Cat 1 — No-Anomaly: nominal")).toBe(1);
+describe("priorityForCategory — objective category → priority under client policy (CR-30)", () => {
+  it("the standards default: 1→MONITOR, 2→SCHEDULED, 3→PROMPT", () => {
+    expect(priorityForCategory(1, DEFAULT_CATEGORY_PRIORITY)).toBe("MONITOR");
+    expect(priorityForCategory(2, DEFAULT_CATEGORY_PRIORITY)).toBe("SCHEDULED");
+    expect(priorityForCategory(3, DEFAULT_CATEGORY_PRIORITY)).toBe("PROMPT");
   });
-  it("returns null when no category is present (caller falls back)", () => {
-    expect(modelCategory("unclassified")).toBeNull();
-    expect(modelCategory(null)).toBeNull();
+
+  it("a client override is honored (Cat 2 → PROMPT); missing keys fall back to the default", () => {
+    const map = { "2": "PROMPT" } as const;
+    expect(priorityForCategory(2, map)).toBe("PROMPT");
+    expect(priorityForCategory(1, map)).toBe("MONITOR"); // fallback
+    expect(priorityForCategory(3, map)).toBe("PROMPT"); // fallback
   });
 });
 
-describe("deltaCategory bands ΔT by the client's escalation knob (CR-15 amend)", () => {
-  it("thresholdValue is the SCHEDULED floor; 2× is the PROMPT floor", () => {
-    expect(deltaCategory(5, 10)).toBe(1); // below → MONITOR band
-    expect(deltaCategory(12, 10)).toBe(2); // ≥ threshold → SCHEDULED band
-    expect(deltaCategory(25, 10)).toBe(3); // ≥ 2× threshold → PROMPT band
-  });
-});
-
-describe("applyPolicy = client policy over the model classification (DET-1c, CR-15 amend)", () => {
-  it("keeps the model category when ΔT does not escalate; verdict-free", () => {
-    const r = applyPolicy(
-      { classification: "IEC TS 62446-3 Cat 2 — Cell: single hot cell", metricDelta: 12, metricUnit: "CELSIUS_DELTA", confidenceScore: 0.9, standardRef: "IEC TS 62446-3" },
-      RULE,
-    );
-    expect(r.category).toBe(2);
-    expect(r.priority).toBe("SCHEDULED");
-    expect(r.routeTargets).toEqual(["GENERIC_WEBHOOK", "NATIVE_JIRA"]);
-    expect(r.recommendation).not.toMatch(VERDICT);
+describe("applyPolicy = priority is a pure function of the objective IEC category (CR-30)", () => {
+  it("derives priority from the category via the default map; verdict-free", () => {
+    const r = applyPolicy(finding(2), RULE);
+    expect(r).not.toBeNull();
+    expect(r!.category).toBe(2);
+    expect(r!.priority).toBe("SCHEDULED");
+    expect(r!.routeTargets).toEqual(["GENERIC_WEBHOOK", "NATIVE_JIRA"]);
+    expect(r!.recommendation).not.toMatch(VERDICT);
+    expect(r!.recommendation).toContain("Priority SCHEDULED");
   });
 
-  it("a high ΔT ESCALATES a low-category model finding toward PROMPT (combine class + ΔT)", () => {
-    const r = applyPolicy(
-      { classification: "IEC TS 62446-3 Cat 1 — Soiling: surface contamination", metricDelta: 25, metricUnit: "CELSIUS_DELTA", confidenceScore: 0.8, standardRef: "IEC TS 62446-3" },
-      RULE,
-    );
-    expect(r.category).toBe(3); // max(model Cat 1, ΔT band 3) = 3
-    expect(r.priority).toBe("PROMPT");
+  it("honors a client override (Cat 2 → PROMPT) — no ΔT involved", () => {
+    const r = applyPolicy(finding(2), { ...RULE, categoryPriority: { "2": "PROMPT" } });
+    expect(r!.priority).toBe("PROMPT");
   });
 
-  it("ΔT never DOWNGRADES a severe model finding", () => {
-    const r = applyPolicy(
-      { classification: "IEC TS 62446-3 Cat 3 — Offline-Module: module offline", metricDelta: 2, metricUnit: "CELSIUS_DELTA", confidenceScore: 0.9, standardRef: "IEC TS 62446-3" },
-      RULE,
-    );
-    expect(r.category).toBe(3);
-    expect(r.priority).toBe("PROMPT");
+  it("Cat 1 → MONITOR, Cat 3 → PROMPT (default)", () => {
+    expect(applyPolicy(finding(1), RULE)!.priority).toBe("MONITOR");
+    expect(applyPolicy(finding(3), RULE)!.priority).toBe("PROMPT");
   });
 
-  it("no ΔT escalation when the client's trigger metric is unresolvable", () => {
-    const r = applyPolicy(
-      { classification: "IEC TS 62446-3 Cat 1 — Shadowing: obstruction", metricDelta: 50, metricUnit: "CELSIUS_DELTA", confidenceScore: 0.9, standardRef: "IEC TS 62446-3" },
-      { ...RULE, triggerMetric: "Vibration_RMS" },
-    );
-    expect(r.category).toBe(1); // trigger not resolvable → no escalation, keep model category
-    expect(r.priority).toBe("MONITOR");
+  it("null category (No-Anomaly / Shadowing-rerouted) → no dispatchable priority", () => {
+    expect(applyPolicy(finding(null), RULE)).toBeNull();
+  });
+
+  it("priority does NOT depend on ΔT — same category, different ΔT, same priority", () => {
+    const low = applyPolicy({ ...finding(2), metricDelta: 3 }, RULE);
+    const high = applyPolicy({ ...finding(2), metricDelta: 90 }, RULE);
+    expect(low!.priority).toBe("SCHEDULED");
+    expect(high!.priority).toBe("SCHEDULED"); // ΔT no longer escalates priority (CR-30)
   });
 });

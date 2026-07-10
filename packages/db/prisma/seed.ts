@@ -129,6 +129,7 @@ async function main() {
       isTemplate: true,
       version: 1,
       routeTargets: ["GENERIC_WEBHOOK", "NATIVE_JIRA"],
+      categoryPriority: { "1": "MONITOR", "2": "SCHEDULED", "3": "PROMPT" }, // M2-2c/CR-30 default, client-overridable
     },
   });
 

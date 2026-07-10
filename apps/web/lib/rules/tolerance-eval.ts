@@ -1,71 +1,52 @@
 /**
- * M0-07 (reframed DET-1c) — RuleSet as CLIENT POLICY over the model classification (CR-12, CR-15 amend).
+ * M2-2c (CR-30 — CR-15 completion) — RuleSet as CLIENT POLICY: priority is a pure function of the
+ * OBJECTIVE IEC Category, mapped per client policy. No ΔT fusion.
  *
- * PURE functions only (no DB). The MODEL (CR-19) owns the anomaly TYPE — the learned classifier
- * assigns the IEC TS 62446-3 category and it is persisted at the inference callback. The RuleSet no
- * longer derives the type from a ΔT cutoff; it is the client's configurable POLICY that consumes the
- * model classification + ΔT + confidence and produces routing/priority/recommendation:
- *   • priority  — combine the model category with ΔT (a high ΔT ESCALATES toward PROMPT), banded by
- *                 the client's own thresholdValue (the escalation knob), per the DET-1b posture;
- *   • routeTargets — the client's delivery routing for this finding;
- *   • recommendation — EVIDENCE-FRAMED ("review recommended vs. <standard>"), never a verdict (CR-12).
- * The client adjudicates the consequence; a human QA gate approves every dispatch (CR-12).
+ * The MODEL (CR-19) owns the anomaly TYPE; `iec_mapping` (M2-2a, CR-28) owns the OBJECTIVE Category
+ * (the standard's ΔT ranges are already encoded INTO the category); the RuleSet owns PRIORITY — a
+ * client-configurable category→priority map. PURE (no DB). Evidence-framed recommendation, never a
+ * verdict (CR-12); the 100% human QA gate approves every dispatch.
  */
 
 export type Priority = "MONITOR" | "SCHEDULED" | "PROMPT";
+export type IecCategory = 1 | 2 | 3;
+export type CategoryPriorityMap = Partial<Record<"1" | "2" | "3", Priority>>;
 
-const PRIORITY_BY_CATEGORY: Record<1 | 2 | 3, Priority> = {
-  1: "MONITOR",
-  2: "SCHEDULED",
-  3: "PROMPT",
+/** Standards-anchored default (seed): objective IEC category → maintenance priority. Client-overridable. */
+export const DEFAULT_CATEGORY_PRIORITY: Record<"1" | "2" | "3", Priority> = {
+  "1": "MONITOR",
+  "2": "SCHEDULED",
+  "3": "PROMPT",
 };
 
 export interface PolicySpec {
-  triggerMetric: string;
-  operator: string; // ">=", ">", "<=", "<", "=="
-  thresholdValue: number; // client escalation knob (°C): the SCHEDULED floor; 2× is the PROMPT floor
+  /** Client policy; a missing key falls back to the standards default. */
+  categoryPriority: CategoryPriorityMap;
   routeTargets: string[];
   standardRef: string | null;
   standardVersion: string | null;
 }
 
 export interface ModelFinding {
-  classification: string | null; // model type, e.g. "IEC TS 62446-3 Cat 2 — Cell: ..."
+  /** OBJECTIVE grounded category (M2-2a). null = No-Anomaly / non-category → no dispatchable priority. */
+  iecCategory: IecCategory | null;
+  classification: string | null;
   metricDelta: number;
-  metricUnit: string | null;
   confidenceScore: number;
   standardRef: string | null;
 }
 
-/** Resolve the value a rule triggers on. M0 solar-thermal: the temperature delta (°C). */
-export function resolveTriggerValue(metricDelta: number, metricUnit: string | null, triggerMetric: string): number | null {
-  if (/temp.*delta|delta/i.test(triggerMetric)) return metricDelta;
-  return null; // unknown metric → cannot evaluate ΔT escalation (extend as new modalities land)
+export interface PolicyResult {
+  priority: Priority;
+  category: IecCategory;
+  routeTargets: string[];
+  recommendation: string;
 }
 
-export function evaluate(operator: string, value: number, threshold: number): boolean {
-  switch (operator) {
-    case ">=": return value >= threshold;
-    case ">": return value > threshold;
-    case "<=": return value <= threshold;
-    case "<": return value < threshold;
-    case "==": return value === threshold;
-    default: return false;
-  }
-}
-
-/** Base IEC category the MODEL assigned, read from its classification string ("… Cat N …"). */
-export function modelCategory(classification: string | null): 1 | 2 | 3 | null {
-  const m = /cat\s*([123])/i.exec(classification ?? "");
-  return m ? (Number(m[1]) as 1 | 2 | 3) : null;
-}
-
-/** ΔT → escalation category, banded by the CLIENT's thresholdValue (SCHEDULED floor; 2× = PROMPT). */
-export function deltaCategory(metricDelta: number, thresholdValue: number): 1 | 2 | 3 {
-  const t = Math.abs(metricDelta);
-  if (thresholdValue > 0 && t >= thresholdValue * 2) return 3;
-  if (thresholdValue > 0 && t >= thresholdValue) return 2;
-  return 1;
+/** Priority for an IEC category under client policy: the org's map, else the standards default. Pure. */
+export function priorityForCategory(category: IecCategory, map: CategoryPriorityMap): Priority {
+  const key = String(category) as "1" | "2" | "3";
+  return map[key] ?? DEFAULT_CATEGORY_PRIORITY[key];
 }
 
 /** Evidence-framed recommendation: measurement + priority + "review recommended vs. <standard>". */
@@ -86,28 +67,17 @@ export function buildRecommendation(input: {
   return `Measured ${delta} (confidence ${conf}); model classified ${cls}. Priority ${input.priority}. Review recommended vs. ${std}.`;
 }
 
-export interface PolicyResult {
-  priority: Priority;
-  category: 1 | 2 | 3;
-  routeTargets: string[];
-  recommendation: string;
-}
-
 /**
- * Apply the client RuleSet POLICY to a model finding. Combines the model's category with the ΔT
- * escalation (bounded by the client's thresholdValue) → served priority; carries routeTargets +
- * an evidence-framed recommendation. The ΔT only ESCALATES — it never downgrades the model's type.
+ * Apply the client RuleSet POLICY to a model finding. Priority derives PURELY from the objective IEC
+ * category via the client's category→priority map (CR-30) — NOT from raw ΔT (the standard's ΔT ranges
+ * are already inside the category, M2-2a). Returns null when the finding has NO objective category
+ * (No-Anomaly / Shadowing-rerouted) → no dispatchable priority. The client owns the map; the human QA
+ * gate adjudicates every dispatch.
  */
-export function applyPolicy(finding: ModelFinding, rule: PolicySpec): PolicyResult {
-  const base = modelCategory(finding.classification) ?? 1;
-
-  // ΔT escalation only when the client's trigger metric is resolvable AND its operator fires.
-  const triggerValue = resolveTriggerValue(finding.metricDelta, finding.metricUnit, rule.triggerMetric);
-  const fires = triggerValue != null && evaluate(rule.operator, triggerValue, rule.thresholdValue);
-  const escalation = fires ? deltaCategory(finding.metricDelta, rule.thresholdValue) : 1;
-
-  const category = Math.max(base, escalation) as 1 | 2 | 3;
-  const priority = PRIORITY_BY_CATEGORY[category];
+export function applyPolicy(finding: ModelFinding, rule: PolicySpec): PolicyResult | null {
+  if (finding.iecCategory == null) return null;
+  const category = finding.iecCategory;
+  const priority = priorityForCategory(category, rule.categoryPriority);
   const recommendation = buildRecommendation({
     classification: finding.classification,
     metricDelta: finding.metricDelta,

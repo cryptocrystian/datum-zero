@@ -1,5 +1,5 @@
 import { prisma, SpatialBindingStatus } from "@dz/db";
-import { applyPolicy, type PolicySpec } from "./tolerance-eval";
+import { applyPolicy, type PolicySpec, type CategoryPriorityMap } from "./tolerance-eval";
 
 /**
  * M0-07 (reframed DET-1c) — client-policy application (CR-12, CR-15 amend).
@@ -35,6 +35,7 @@ export async function applyClientPolicy(
       metricDelta: true,
       metricUnit: true,
       confidenceScore: true,
+      iecCategory: true,
       ruleSetId: true,
       mediaAsset: { select: { ingestionSession: { select: { modality: true } } } },
     },
@@ -49,6 +50,7 @@ export async function applyClientPolicy(
     orderBy: { version: "desc" },
     select: {
       id: true,
+      categoryPriority: true,
       triggerMetric: true,
       operator: true,
       thresholdValue: true,
@@ -60,35 +62,33 @@ export async function applyClientPolicy(
   if (!rule) return { anomalyId, applied: false }; // no client policy → delivery uses the generic fallback
 
   const spec: PolicySpec = {
-    triggerMetric: rule.triggerMetric,
-    operator: rule.operator,
-    thresholdValue: rule.thresholdValue,
+    categoryPriority: (rule.categoryPriority ?? {}) as CategoryPriorityMap,
     routeTargets: rule.routeTargets,
     standardRef: rule.standardRef,
     standardVersion: rule.standardVersion,
   };
   const result = applyPolicy(
     {
+      iecCategory: anomaly.iecCategory as 1 | 2 | 3 | null,
       classification: anomaly.classification,
       metricDelta: anomaly.metricDelta,
-      metricUnit: anomaly.metricUnit,
       confidenceScore: anomaly.confidenceScore,
       standardRef: anomaly.standardRef,
     },
     spec,
   );
 
+  // CR-30: priority derives from the OBJECTIVE iecCategory via the client's category→priority map.
+  // iecCategory = null (No-Anomaly / non-category) -> no dispatchable priority; mark the policy
+  // considered (ruleSetId) so it isn't reprocessed. classification/standardRef stay the MODEL's
+  // authority; status stays PENDING_QA (CR-12).
   await prisma.anomaly.update({
     where: { id: anomaly.id },
-    data: {
-      priority: result.priority,
-      recommendation: result.recommendation,
-      ruleSetId: rule.id,
-      // classification / standardRef are the MODEL's authority — not written here.
-      // status is intentionally NOT touched — it stays PENDING_QA (CR-12).
-    },
+    data: result
+      ? { priority: result.priority, recommendation: result.recommendation, ruleSetId: rule.id }
+      : { ruleSetId: rule.id },
   });
-  return { anomalyId, applied: true, ruleSetId: rule.id, priority: result.priority };
+  return { anomalyId, applied: true, ruleSetId: rule.id, priority: result?.priority };
 }
 
 export interface PolicySummary {
