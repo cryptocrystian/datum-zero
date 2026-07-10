@@ -15,7 +15,7 @@ import { checkGlare } from "./glare";
 
 export type CheckStatus = "PASS" | "WARN" | "FAIL";
 /** Quality checks (M1-05) run purely from EXIF; hardware checks (M1-06) also consult the registry. */
-export type CheckKey = "frame" | "gps" | "sunGlare" | "exposure" | "overlap" | "radiometric";
+export type CheckKey = "frame" | "gps" | "sunGlare" | "exposure" | "overlap" | "radiometric" | "gpsIntegrity";
 export type GlareStatus = "CLEAR" | "RISK" | "UNVERIFIED"; // M2-3a/CR-31 solar-glare flag
 export type CoverageStatus = "SUFFICIENT" | "PARTIAL" | "INSUFFICIENT" | "UNVERIFIED"; // M2-3a/CR-31 session coverage
 export type HardwareCheckKey = "ndaa" | "airframe";
@@ -111,6 +111,8 @@ export interface ValidationConfig {
   exposureTimeFailAboveSec: number;
   /** Minimum frame count for a usable set. */
   minFrameCount: number;
+  /** Implausible-GPS-jump gate: ground speed (m/s) above this between consecutive captures. */
+  maxGroundSpeedMps: number;
   /**
    * NDAA heuristic blocklist — manufacturer name fragments (lowercase) commonly cited on U.S.
    * covered-foreign-entity / NDAA §848 discussions. This is a HEURISTIC SCREENING SIGNAL from the
@@ -136,6 +138,7 @@ export const DEFAULT_VALIDATION_CONFIG: ValidationConfig = {
   exposureTimeWarnAboveSec: 1 / 100,
   exposureTimeFailAboveSec: 1 / 50,
   minFrameCount: 20,
+  maxGroundSpeedMps: 30, // ~108 km/h — well above survey-drone ground speed
   // Documented heuristic (non-authoritative): common covered-entity manufacturers.
   ndaaBlocklist: ["dji", "da-jiang", "autel", "yuneec", "hubsan", "holy stone"],
 };
@@ -239,6 +242,24 @@ export function checkGps(f: FrameMeta): CheckResult {
     };
   }
   return { status: "PASS", reason: `GPS ${f.latitude.toFixed(6)}, ${f.longitude.toFixed(6)}.` };
+}
+
+/** GPS integrity (M2-3a/CR-31) — an implausible position jump between consecutive captures (a bad
+ *  fix / stitched sequence). FLAG only (never blocks). A frame with NO GPS is handled by checkGps
+ *  (and is critical-missing at ingestion, M2-3a Part D) — integrity has nothing to compare here. */
+export function checkGpsIntegrity(f: FrameMeta, prev: FrameMeta | null, config: ValidationConfig): CheckResult {
+  if (!hasGps(f)) return { status: "PASS", reason: "No GPS on this frame — integrity not applicable (see GPS check)." };
+  if (prev == null || !hasGps(prev) || f.capturedAt == null || prev.capturedAt == null) {
+    return { status: "PASS", reason: "GPS present; no comparable predecessor for a jump check." };
+  }
+  const d = haversineMeters(prev.latitude!, prev.longitude!, f.latitude!, f.longitude!);
+  const dt = Math.abs(f.capturedAt - prev.capturedAt) / 1000; // seconds
+  if (dt <= 0) return { status: "PASS", reason: "GPS present; no time delta between captures to compute a jump." };
+  const speed = d / dt;
+  if (speed > config.maxGroundSpeedMps) {
+    return { status: "WARN", reason: `Implausible GPS jump — ${Math.round(d)} m in ${dt.toFixed(1)} s (~${Math.round(speed)} m/s); position may be unreliable.` };
+  }
+  return { status: "PASS", reason: `GPS consistent (~${Math.round(speed)} m/s over ${dt.toFixed(1)} s).` };
 }
 
 /** (1) Sun-glare risk — low sun elevation from capture time + GPS. */
@@ -456,6 +477,7 @@ export function validateCaptureSet(
       frame: checkFrame(f),
       radiometric: checkRadiometric(f),
       gps: checkGps(f),
+      gpsIntegrity: checkGpsIntegrity(f, prev, config),
       sunGlare: checkSunGlare(f, config),
       exposure: checkExposure(f, config),
       overlap: checkOverlap(f, prev, config),
