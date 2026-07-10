@@ -17,6 +17,7 @@ export type CheckStatus = "PASS" | "WARN" | "FAIL";
 /** Quality checks (M1-05) run purely from EXIF; hardware checks (M1-06) also consult the registry. */
 export type CheckKey = "frame" | "gps" | "sunGlare" | "exposure" | "overlap" | "radiometric";
 export type GlareStatus = "CLEAR" | "RISK" | "UNVERIFIED"; // M2-3a/CR-31 solar-glare flag
+export type CoverageStatus = "SUFFICIENT" | "PARTIAL" | "INSUFFICIENT" | "UNVERIFIED"; // M2-3a/CR-31 session coverage
 export type HardwareCheckKey = "ndaa" | "airframe";
 
 export interface CheckResult {
@@ -85,6 +86,7 @@ export interface RunSummary {
   eligible: number; // frames eligible to upload (no FAIL)
   counts: Record<CheckStatus, number>; // by worst-per-file status
   status: CheckStatus; // overall worst
+  coverageStatus: CoverageStatus; // M2-3a/CR-31 session-level coverage from the capture coordinates
   notes: string[]; // set-level, evidence-framed observations
 }
 
@@ -391,6 +393,51 @@ function buildNotes(frames: FrameMeta[], files: FileResult[], config: Validation
   return notes;
 }
 
+// --- coverage (M2-3a/CR-31): session-level haversine forward-overlap over the capture set ----------
+
+/** Numeric forward overlap (%) between consecutive GPS frames, or null when it can't be computed. */
+function forwardOverlapPct(f: FrameMeta, prev: FrameMeta, config: ValidationConfig): number | null {
+  if (!hasGps(f) || !hasGps(prev)) return null;
+  const alt = f.altitude ?? prev.altitude;
+  if (alt == null || alt <= 0) return null;
+  const fov = horizontalFovDeg(f.focalLength35) ?? config.defaultHorizontalFovDeg;
+  const footprint = 2 * alt * Math.tan((fov / 2) * RAD);
+  if (footprint <= 0) return null;
+  const d = haversineMeters(prev.latitude!, prev.longitude!, f.latitude!, f.longitude!);
+  return (1 - d / footprint) * 100;
+}
+
+/**
+ * Session-level coverage from the capture coordinates (M2-3a/CR-31): median forward overlap vs. the
+ * client's overlap targets, plus a gap count. FLAG, not block — an under-covered session still
+ * processes; the reviewer sees coverage is partial. UNVERIFIED when GPS/altitude can't support it.
+ */
+export function coverageStatus(
+  frames: FrameMeta[],
+  config: ValidationConfig = DEFAULT_VALIDATION_CONFIG,
+): { coverageStatus: CoverageStatus; reason: string } {
+  const overlaps: number[] = [];
+  for (let i = 1; i < frames.length; i++) {
+    const o = forwardOverlapPct(frames[i], frames[i - 1], config);
+    if (o != null) overlaps.push(o);
+  }
+  if (overlaps.length === 0) {
+    return { coverageStatus: "UNVERIFIED", reason: "Coverage not computed — insufficient GPS/altitude across the set." };
+  }
+  const sorted = [...overlaps].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const gaps = overlaps.filter((o) => o < config.overlapForwardFailPct).length;
+  const m = Math.max(0, Math.round(median));
+  if (median >= config.overlapForwardWarnPct && gaps === 0) {
+    return { coverageStatus: "SUFFICIENT", reason: `Median forward overlap ~${m}% across ${overlaps.length} pairs; no gaps.` };
+  }
+  if (median >= config.overlapForwardFailPct) {
+    return { coverageStatus: "PARTIAL", reason: `Median forward overlap ~${m}%${gaps ? `; ${gaps} pair(s) below ${config.overlapForwardFailPct}%` : ""}.` };
+  }
+  return { coverageStatus: "INSUFFICIENT", reason: `Median forward overlap ~${m}% — below the ${config.overlapForwardFailPct}% coverage target; gaps likely.` };
+}
+
+
 /**
  * Validate a staged capture set (frames in capture order). Pure + deterministic.
  *
@@ -438,6 +485,8 @@ export function validateCaptureSet(
   for (const f of files) counts[f.status] += 1;
 
   const notes = buildNotes(frames, files, config);
+  const coverage = coverageStatus(frames, config);
+  notes.push(coverage.reason);
   let summaryStatus = worstOf(files.map((f) => f.status));
 
   // Optional flight-log telemetry cross-check (M1-06): informational — surfaces a note and can WARN
@@ -454,6 +503,7 @@ export function validateCaptureSet(
       total: frames.length,
       eligible: files.filter((f) => f.uploadEligible).length,
       counts,
+      coverageStatus: coverage.coverageStatus,
       status: summaryStatus,
       notes,
     },
