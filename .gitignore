@@ -36,9 +36,13 @@ services/inference/app/radiometric/_dji_sdk_native.py
 services/inference/vendor/dji-thermal-sdk/
 **/libdirp*
 
-# per-machine agent / hook config (Claude Code settings + graphify hook paths) — stays local
+# per-machine agent / hook config (Claude Code settings + graphify hook paths) — stays local.
+# NOTE: .claude/skills/** ARE tracked (project assets — architect/design/graphify); only local,
+# never-committed tooling is ignored here.
 .claude/settings.json
 .claude/settings.local.json
+.claude/CLAUDE.md
+.claude/launch.json
 
 # misc
 .DS_Store
