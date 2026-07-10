@@ -11,10 +11,12 @@
  */
 
 import { captureQualityReason } from "../quality/reason";
+import { checkGlare } from "./glare";
 
 export type CheckStatus = "PASS" | "WARN" | "FAIL";
 /** Quality checks (M1-05) run purely from EXIF; hardware checks (M1-06) also consult the registry. */
 export type CheckKey = "frame" | "gps" | "sunGlare" | "exposure" | "overlap" | "radiometric";
+export type GlareStatus = "CLEAR" | "RISK" | "UNVERIFIED"; // M2-3a/CR-31 solar-glare flag
 export type HardwareCheckKey = "ndaa" | "airframe";
 
 export interface CheckResult {
@@ -73,6 +75,7 @@ export interface FileResult {
   uploadEligible: boolean; // no FAIL in any check — the client-side gate before upload (M1-06)
   serial: string | null; // extracted airframe serial, for the authoritative server-side bind
   capturedAt: number | null;
+  glareStatus: GlareStatus; // M2-3a/CR-31 solar-glare flag (UNVERIFIED until module orientation wired)
   checks: Record<CheckKey, CheckResult>;
   hardware?: Record<HardwareCheckKey, CheckResult>; // present only when a registry screen is supplied
 }
@@ -410,6 +413,9 @@ export function validateCaptureSet(
       exposure: checkExposure(f, config),
       overlap: checkOverlap(f, prev, config),
     };
+    // Solar-glare flag (M2-3a/CR-31). Module orientation (registry) isn't wired to the client yet
+    // → honest UNVERIFIED; glare FLAGS, it never blocks upload.
+    const glare = checkGlare(f, null);
     const hardware = registry
       ? { ndaa: checkNdaa(f, config), airframe: checkAirframe(f, registry) }
       : undefined;
@@ -422,6 +428,7 @@ export function validateCaptureSet(
       uploadEligible: status !== "FAIL",
       serial: f.serialNumber,
       capturedAt: f.capturedAt,
+      glareStatus: glare.glareStatus,
       checks,
       hardware,
     };
