@@ -109,3 +109,23 @@ export function verifyCoverage(
 
   return { ok: failures.length === 0, failures };
 }
+
+/**
+ * Evaluate a pilot's set of policies against one requirement profile + mission window. Coverage holds
+ * if ANY single policy is adequate (a pilot may carry more than one — e.g. a BYO annual plus an
+ * on-demand rider). When none pass, the CLOSEST candidate's reasons (fewest failed dimensions) are
+ * surfaced so the operator sees the most-actionable gap. Pure — the mission gate projects the rows.
+ */
+export function evaluateCoverage(
+  policies: CoveragePolicy[],
+  profile: CoverageProfile,
+  window: MissionWindow,
+): CoverageResult {
+  if (policies.length === 0) {
+    return { ok: false, failures: ["no insurance policy on file for the pilot"] };
+  }
+  const results = policies.map((p) => verifyCoverage(p, profile, window));
+  if (results.some((r) => r.ok)) return { ok: true, failures: [] };
+  const best = results.reduce((a, b) => (b.failures.length < a.failures.length ? b : a));
+  return { ok: false, failures: best.failures };
+}

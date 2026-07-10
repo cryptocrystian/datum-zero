@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   verifyCoverage,
+  evaluateCoverage,
   type CoveragePolicy,
   type CoverageProfile,
   type MissionWindow,
@@ -141,6 +142,27 @@ describe("verifyCoverage — a PROFILE match, not a number (CR-02/CR-09/CR-10)",
       requiresWaiverOfSubrogation: false,
     });
     expect(verifyCoverage(bare, relaxed, WINDOW).ok).toBe(true);
+  });
+
+  it("evaluateCoverage: passes if ANY of the pilot's policies is adequate", () => {
+    const inadequate = policy({ isVerified: false });
+    const adequate = policy();
+    expect(evaluateCoverage([inadequate, adequate], profile(), WINDOW).ok).toBe(true);
+  });
+
+  it("evaluateCoverage: no policies on file fails closed", () => {
+    const r = evaluateCoverage([], profile(), WINDOW);
+    expect(r.ok).toBe(false);
+    expect(r.failures.some((f) => /no insurance policy on file/.test(f))).toBe(true);
+  });
+
+  it("evaluateCoverage: when none pass, surfaces the closest candidate's reasons", () => {
+    const wayOff = policy({ liabilityLimit: 1, isDedicatedAviation: false, hasBlanketAI: false, isVerified: false });
+    const oneGap = policy({ isVerified: false }); // a single failed dimension
+    const r = evaluateCoverage([wayOff, oneGap], profile(), WINDOW);
+    expect(r.ok).toBe(false);
+    expect(r.failures).toHaveLength(1);
+    expect(r.failures[0]).toMatch(/not verified/);
   });
 
   it("no verdict language in any failure reason (CR-12)", () => {
