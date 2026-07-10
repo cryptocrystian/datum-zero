@@ -19,6 +19,7 @@ process.env.JIRA_API_TOKEN = "e2e-token";
 import { NextRequest } from "next/server";
 import { prisma, runWithOrg, SpatialBindingStatus, QueueStatus } from "@dz/db";
 import { validateWorkOrder } from "@dz/adapters";
+import { DEFAULT_CATEGORY_PRIORITY } from "@/lib/rules/tolerance-eval";
 import { POST as inferenceCallback } from "@/app/api/v1/inference/callback/route";
 import { approveAnomaly } from "@/lib/qa/review";
 import { getProvenance } from "@/lib/audit/provenance";
@@ -176,7 +177,10 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
     expect(anomaly.classification).toBe(MODEL_CLASSIFICATION); // persisted verbatim from the model payload
     expect(anomaly.standardRef).toBe("IEC TS 62446-3");
     expect(anomaly.ruleSetId).toBeTruthy(); // client policy applied
-    expect(anomaly.priority).toBe("SCHEDULED"); // model Cat 2 + ΔT 18.4°C (< 2× the 10°C knob) → SCHEDULED
+    // M2-2c/CR-30: priority DERIVES from the objective iecCategory via the RuleSet category→priority
+    // map (default), NOT from ΔT. Cat 2 -> SCHEDULED.
+    expect(anomaly.priority).toBe("SCHEDULED");
+    expect(anomaly.priority).toBe(DEFAULT_CATEGORY_PRIORITY[String(anomaly.iecCategory) as "1" | "2" | "3"]);
     expect(anomaly.recommendation).toContain("Priority SCHEDULED");
     expect(anomaly.recommendation).not.toMatch(VERDICT); // evidence-framed
     expect(anomaly.status).toBe(QueueStatus.PENDING_QA);
