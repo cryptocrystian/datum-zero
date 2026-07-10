@@ -80,26 +80,16 @@ def classify(label: str) -> IecClassification:
     )
 
 
-def served_priority(
-    base_category: int,
-    metric_delta: float,
-    *,
-    scheduled_delta: float = 10.0,
-    prompt_delta: float = 20.0,
-) -> tuple[int, str]:
-    """Combine the classifier's IEC category with the measured ΔT (°C) into the SERVED category +
-    priority (DET-1b). A high ΔT can only ESCALATE toward Cat 3 / PROMPT per the IEC matrix — it
-    never downgrades a pattern-class finding. Pure. PROVISIONAL bands (CR-19): the ΔT floors below
-    mirror the placeholder M0-07 cutoffs and await the standard's full matrix + field calibration."""
-    delta_category = 3 if metric_delta >= prompt_delta else 2 if metric_delta >= scheduled_delta else 1
-    served = max(base_category, delta_category)
-    return served, PRIORITY_BY_CATEGORY[served]
+# served_priority (the category+ΔT fusion) was RETIRED in M2-2c/CR-30: priority is now a pure
+# function of the objective iec_category under client RuleSet policy (apps/web/lib/rules/
+# tolerance-eval.ts). The objective category already encodes the standard's ΔT ranges (M2-2a/CR-28);
+# ΔT no longer sets priority.
 
 
 # ==================================================================================================
 # M2-2a (CR-28) — GROUNDED IEC Category: pattern + irradiance-normalized ΔT -> objective IEC Category.
 # ADDITIVE + CR-15-SAFE: this emits the objective CATEGORY ONLY (never MONITOR/SCHEDULED/PROMPT — that
-# priority stays RuleSet/served_priority-owned). Thresholds are read from the IEC TS 62446-3 COMMITTEE
+# priority stays RuleSet client-policy-owned). Thresholds are read from the IEC TS 62446-3 COMMITTEE
 # DRAFT (82/1073) Annex C and are PROVISIONAL pending confirmation vs. the published IEC TS 62446-3:2017
 # — do NOT stamp :2017. Grounding notes: docs/IEC-62446-3-MAPPING.md.
 # ==================================================================================================

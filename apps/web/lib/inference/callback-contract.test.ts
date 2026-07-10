@@ -10,7 +10,7 @@ function sample() {
     media_asset: { full_storage_path: "s3://datum-zero-dev/master/e2e.tif", captured_at: "2026-07-05T18:00:00Z" },
     detection: {
       confidence_score: 0.968, metric_delta: 18.4, metric_unit: "CELSIUS_DELTA",
-      bounding_box: [180, 120, 250, 190], class_label: "Cell", iec_category: 2, priority: "SCHEDULED",
+      bounding_box: [180, 120, 250, 190], class_label: "Cell",
       classification: "IEC TS 62446-3 Cat 2 — Cell: single hot cell — investigate at next scheduled maintenance.",
       standard_ref: "IEC TS 62446-3", radiometric: true, delta_provisional: false,
       latitude: "32.222780", longitude: "-110.974370", z_axis_offset: null,

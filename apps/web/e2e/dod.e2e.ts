@@ -146,7 +146,7 @@ describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
         confidence_score: 0.968, metric_delta: 18.4, metric_unit: "CELSIUS_DELTA",
         bounding_box: BBOX, latitude: LAT, longitude: LON, z_axis_offset: null,
         // Model owns the type (CR-19): class + IEC category served through the callback (DET-1b).
-        class_label: "Cell", iec_category: 2, priority: "SCHEDULED",
+        class_label: "Cell",
         classification: MODEL_CLASSIFICATION, standard_ref: "IEC TS 62446-3",
         detected_format: "RADIOMETRIC_TIFF",
         grounded_iec_category: 2, requires_safety_review: false,

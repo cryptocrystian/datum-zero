@@ -13,7 +13,6 @@ import pytest
 from PIL import Image
 
 from app.detector import Detection, detect
-from app.iec_mapping import served_priority
 
 
 @pytest.fixture(autouse=True)
@@ -87,18 +86,10 @@ def test_uniform_frame_is_degenerate_not_failclosed():
     d = detect(uniform_tiff(30.0))
     assert isinstance(d, Detection)  # radiometric-but-quiet is a VALID finding, not fail-closed
     assert d.metric_delta == pytest.approx(0.0, abs=0.5)
-    # ΔT contributes no escalation at ~0 °C; the served priority is purely class-driven.
-    assert d.priority in ("MONITOR", "SCHEDULED", "PROMPT")
-    assert served_priority(1, d.metric_delta) == (1, "MONITOR")
-
-
-def test_served_priority_is_monotonic_in_delta():
-    # The CR-12 invariant isolated at the combiner (class held fixed): a higher ΔT never lowers the
-    # served priority. served = max(base_category, ΔT-category), and ΔT-category is non-decreasing.
-    rank = {"MONITOR": 0, "SCHEDULED": 1, "PROMPT": 2}
-    for base_cat in (1, 2, 3):
-        seq = [rank[served_priority(base_cat, dt)[1]] for dt in (0, 5, 9, 10, 15, 19, 20, 30, 50, 100)]
-        assert seq == sorted(seq), f"served priority must be monotonic in ΔT for base category {base_cat}"
+    # priority is no longer on the Detection (M2-2c/CR-30) — it is RuleSet client policy over the
+    # objective grounded category, not a served ΔT fusion.
+    assert not hasattr(d, "priority")
+    assert d.grounded_iec_category in (1, 2, 3, None)
 
 
 def test_delta_t_measurement_is_monotonic_in_hotspot_temperature():

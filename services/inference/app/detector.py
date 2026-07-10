@@ -15,7 +15,8 @@ On a radiometric capture:
       outliers. A quiet (uniform) radiometric frame yields ΔT ≈ 0 — a VALID low/no-anomaly outcome,
       distinct from the M2-1b fail-closed (which is only for NO radiometric channel).
   (4) COMBINE — class + ΔT → the SERVED priority; a high ΔT escalates toward Cat 3 / PROMPT per the
-      IEC matrix (`iec_mapping.served_priority`), never downgrades.
+      IEC matrix (M2-2a grounded category). Priority is RuleSet client policy over that category
+      (M2-2c/CR-30) — NOT a served ΔT fusion.
 
 Measurement is radiometric-only (CR-23): the 8-bit intensity→°C provisional-ΔT proxy is RETIRED —
 fabricating a ΔT from intensity is exactly what CR-22 forbids. Classification is unchanged:
@@ -34,7 +35,7 @@ import numpy as np
 from PIL import Image
 
 from app.classifier import MODEL_VERSION, classify_array
-from app.iec_mapping import STANDARD_REF, iec_category, served_priority
+from app.iec_mapping import STANDARD_REF, iec_category
 from app.geometry import geometry_status as compute_geometry_status
 from app.radiometric import ParseStatus, RadiometricResult, build_default_port, format_fingerprint
 
@@ -72,8 +73,6 @@ class Detection:
     bounding_box: list[int]
     # --- standards classification layer (DET-1b: model raises the candidate; CR-12 gate unchanged) ---
     class_label: str
-    iec_category: int
-    priority: str
     classification: str        # evidence-framed, no verdict language
     standard_ref: str
     detected_format: str | None  # sniffed radiometric format (M2-1e/CR-27) — audit provenance
@@ -247,7 +246,7 @@ def _delta_t(arr: np.ndarray, box: tuple[int, int, int, int], config: DetectorCo
 # detection
 # --------------------------------------------------------------------------------------------------
 def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection | FailClosed:
-    """Decode true °C → propose → classify → ΔT → served priority. Fails closed (returns FailClosed,
+    """Decode true °C → propose → classify → ΔT → grounded category. Fails closed (returns FailClosed,
     no fabricated measurement) when the capture has no usable radiometric channel (CR-22/CR-23)."""
     if not image:
         raise ValueError("empty image: nothing to detect")
@@ -281,11 +280,6 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
             ((b, _delta_t(arr, b, config)) for b in proposals),
             key=lambda bd: bd[1],
         )
-        served_cat, priority = served_priority(
-            cls.iec.iec_category, delta,
-            scheduled_delta=config.escalate_scheduled_delta,
-            prompt_delta=config.escalate_prompt_delta,
-        )
     else:
         # Multi-module frame — classify each candidate region; serve the MOST SEVERE finding (the
         # contract is one anomaly per callback). NOTE: reporting only the top finding is a known
@@ -298,15 +292,12 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
                 continue
             cls = classify_array(_stretch_u8(region))
             delta = _delta_t(arr, b, config)
-            served_cat, priority = served_priority(
-                cls.iec.iec_category, delta,
-                scheduled_delta=config.escalate_scheduled_delta,
-                prompt_delta=config.escalate_prompt_delta,
-            )
-            rank = (served_cat, cls.confidence, delta)
+            # Rank by the OBJECTIVE grounded category (M2-2a) — the standard's severity, no ΔT fusion.
+            cat = iec_category(cls.label, delta).category or 0
+            rank = (cat, cls.confidence, delta)
             if best is None or rank > best[0]:
-                best = (rank, b, cls, delta, served_cat, priority)
-        _, box, cls, delta, served_cat, priority = best
+                best = (rank, b, cls, delta)
+        _, box, cls, delta = best
 
     # Grounded objective IEC Category (M2-2a/CR-28) — pattern + normalized ΔT; CATEGORY ONLY (CR-15).
     # Irradiance (G) is not yet available to the detector, so normalization is honestly UNAVAILABLE.
@@ -326,9 +317,9 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
             detected_format=result.detected_format.name if result.detected_format else None,
             format_fingerprint=format_fingerprint(image),
         )
-    classification = f"{STANDARD_REF} Cat {served_cat} — {cls.label}: {cls.iec.condition}"
-    if served_cat > cls.iec.iec_category:  # ΔT escalated above the pattern-class category
-        classification += f" ΔT {delta:.1f}°C elevates priority to {priority}."
+    cat = grounded.category
+    cat_label = f"Cat {cat} " if cat is not None else ""
+    classification = f"{STANDARD_REF} {cat_label}— {cls.label}: {cls.iec.condition}"
 
     x1, y1, x2, y2 = box
     return Detection(
@@ -337,8 +328,6 @@ def detect(image: bytes, config: DetectorConfig = DEFAULT_CONFIG) -> Detection |
         metric_unit="CELSIUS_DELTA",
         bounding_box=[int(x1), int(y1), int(x2), int(y2)],
         class_label=cls.label,
-        iec_category=served_cat,
-        priority=priority,
         classification=classification,
         standard_ref=STANDARD_REF,
         detected_format=result.detected_format.name if result.detected_format else None,

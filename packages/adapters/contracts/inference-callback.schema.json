@@ -44,8 +44,6 @@
           "maxItems": 4
         },
         "class_label": { "type": "string" },
-        "iec_category": { "type": "integer", "minimum": 1, "maximum": 3 },
-        "priority": { "type": "string" },
         "classification": { "type": "string", "minLength": 1 },
         "standard_ref": { "type": "string", "minLength": 1 },
         "detected_format": { "type": ["string", "null"] },

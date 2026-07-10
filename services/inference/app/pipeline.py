@@ -66,8 +66,6 @@ def build_callback_payload(
             "bounding_box": detection.bounding_box,
             # standards classification the model raises (model proposes; CR-12 human gate decides)
             "class_label": detection.class_label,
-            "iec_category": detection.iec_category,
-            "priority": detection.priority,
             "classification": detection.classification,
             "standard_ref": detection.standard_ref,
             "detected_format": detection.detected_format,

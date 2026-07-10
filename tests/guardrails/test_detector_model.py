@@ -79,7 +79,7 @@ def test_detector_serves_classifier_not_stub():
     src = DETECTOR.read_text()
     assert "from app.classifier import" in src and "classify_array" in src, \
         "DET-1b detector must serve the DET-1a ONNX classifier per proposal, not a threshold stub"
-    assert "served_priority" in src, "detector must combine class + ΔT into the served priority"
+    assert "served_priority" not in src, "M2-2c/CR-30: served_priority is retired — priority is RuleSet policy over the objective category, not a detector ΔT fusion"
     assert "hashlib" not in src, "the sha256-blob stub crops are gone — crops are real pixel PNGs"
 
 
@@ -88,10 +88,13 @@ def test_served_model_version_is_bumped():
         "DET-1b serves the classifier weights — model version must be thermal-classifier-v1"
 
 
-def test_delta_escalation_combines_class_and_delta():
-    src = MAPPING.read_text()
-    assert "def served_priority(" in src, "class + ΔT combination lives in iec_mapping.served_priority"
-    assert "max(base_category" in src, "ΔT may only ESCALATE the class category, never downgrade"
+def test_served_priority_is_retired_priority_is_category_based():
+    # M2-2c/CR-30: the served_priority category+ΔT fusion is GONE; priority is a pure function of the
+    # objective iecCategory under RuleSet client policy (apps/web/lib/rules/tolerance-eval.ts).
+    assert "def served_priority(" not in MAPPING.read_text(), "iec_mapping.served_priority must be retired"
+    assert "def served_priority(" not in DETECTOR.read_text(), "detector must not re-derive a served priority"
+    tol = (ROOT / "apps/web/lib/rules/tolerance-eval.ts").read_text()
+    assert "priorityForCategory" in tol, "priority must derive from the IEC category (RuleSet client policy)"
 
 
 def test_callback_payload_emits_contract_fields():
@@ -116,7 +119,7 @@ def test_grounded_iec_category_is_additive_and_category_only():
     # objective Category, never a priority string (asserted on the value in the inference unit test).
     src = MAPPING.read_text()
     assert "def iec_category(" in src and "IecCategoryResult" in src, "grounded Category mapping (CR-28)"
-    assert "def served_priority(" in src, "M2-2a is additive — served_priority must remain (retire in M2-2c)"
+    assert "def served_priority(" not in src, "M2-2c/CR-30: served_priority is retired (priority is RuleSet category policy)"
     assert "IEC TS 62446-3 (CD / pending verification)" in src, "CD-provisional provenance marker (never :2017)"
 
 

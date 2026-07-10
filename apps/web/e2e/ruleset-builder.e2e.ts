@@ -54,7 +54,7 @@ describe("OPS-1 — a UI-authored RuleSet drives the pipeline's routing + priori
   it("authors a policy via the DAL, then the pipeline applies its escalation + routing", () =>
     runWithOrg(ORG, async () => {
       // 1) AUTHOR a client policy through the same DAL the cockpit server action calls.
-      //    routeTargets = webhook ONLY (not Jira); threshold 5°C so an 18.4°C ΔT escalates to PROMPT.
+      //    routeTargets = webhook ONLY (not Jira); a Cat 2 → PROMPT category override drives priority (CR-30).
       const authored = await createRuleSet(ORG, {
         name: "Orthomosaic — aggressive escalation",
         targetModality: "DRONE_ORTHOMOSAIC",
@@ -68,6 +68,9 @@ describe("OPS-1 — a UI-authored RuleSet drives the pipeline's routing + priori
       });
       authoredRuleSetId = authored.id;
       expect(authored.version).toBeGreaterThanOrEqual(1);
+      // M2-2c/CR-30: a client category→priority OVERRIDE (Cat 2 → PROMPT). Priority now derives from
+      // the objective category via this map, NOT a ΔT threshold. (The admin UI edit is a follow-on.)
+      await prisma.ruleSet.update({ where: { id: authored.id }, data: { categoryPriority: { "2": "PROMPT" } } });
 
       // 2) INGEST (DRONE_ORTHOMOSAIC) + a model-classified detection.
       await prisma.ingestionSession.create({
@@ -83,7 +86,7 @@ describe("OPS-1 — a UI-authored RuleSet drives the pipeline's routing + priori
         detection: {
           confidence_score: 0.968, metric_delta: 18.4, metric_unit: "CELSIUS_DELTA",
           bounding_box: BBOX, latitude: LAT, longitude: LON, z_axis_offset: null,
-          class_label: "Cell", iec_category: 2, priority: "SCHEDULED",
+          class_label: "Cell", grounded_iec_category: 2,
           classification: "IEC TS 62446-3 Cat 2 — Cell: single hot cell — investigate at next scheduled maintenance.",
           standard_ref: "IEC TS 62446-3", radiometric: true, delta_provisional: false,
           visual_crop_url: "s3://datum-zero-dev/v", analytics_crop_url: "s3://datum-zero-dev/a",
@@ -104,7 +107,7 @@ describe("OPS-1 — a UI-authored RuleSet drives the pipeline's routing + priori
       expect(anomaly.spatialBindingStatus).toBe(SpatialBindingStatus.BOUND);
       expect(anomaly.assetId).toBe(EXPECT_ASSET);
       expect(anomaly.ruleSetId).toBe(authored.id);                 // the UI-authored policy was applied
-      expect(anomaly.priority).toBe("PROMPT");                     // ΔT 18.4 ≥ 2×5°C → escalated (authored threshold)
+      expect(anomaly.priority).toBe("PROMPT");                     // authored category override Cat 2 → PROMPT (CR-30), not ΔT
       expect(anomaly.classification).toContain("IEC TS 62446-3");  // model still owns the type (CR-19)
       expect(anomaly.status).toBe(QueueStatus.PENDING_QA);         // policy never advances the queue (CR-12)
 

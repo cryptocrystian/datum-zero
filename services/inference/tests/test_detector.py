@@ -15,7 +15,6 @@ import pytest
 from PIL import Image
 
 from app.detector import MODEL_VERSION, Detection, FailClosed, detect, render_crops
-from app.iec_mapping import served_priority
 from app.pipeline import build_callback_payload, process_session
 from app.storage import LocalStorage, locator_to_key
 
@@ -80,15 +79,13 @@ def test_delta_is_real_celsius_from_decoded_temperature():
     assert x1 >= 130 and x2 <= 300 and y1 >= 80
 
 
-def test_high_delta_escalates_priority_toward_prompt():
-    # A large ΔT can only ESCALATE the served category (class + ΔT combine); never downgrade.
-    assert served_priority(1, 25.0) == (3, "PROMPT")
-    assert served_priority(2, 12.0) == (2, "SCHEDULED")
-    assert served_priority(3, 0.0) == (3, "PROMPT")
-    # end to end: a ≥20 °C radiometric ΔT lifts the served finding to Cat 3 / PROMPT.
-    d = detect(RADIO)
-    assert isinstance(d, Detection)
-    assert d.iec_category == 3 and d.priority == "PROMPT"
+def test_detection_carries_no_served_priority_or_category():
+    # M2-2c/CR-30: the served_priority category+ΔT fusion is RETIRED. detect() no longer emits a
+    # fused category or priority — the OBJECTIVE grounded category is on the payload; priority is
+    # RuleSet client policy over that category (apps/web/lib/rules/tolerance-eval.ts).
+    assert "priority" not in Detection.__dataclass_fields__
+    assert "iec_category" not in Detection.__dataclass_fields__
+    assert "grounded_iec_category" in Detection.__dataclass_fields__  # the objective category remains
 
 
 # ---- fail closed: no usable radiometric channel (CR-22/CR-23) --------------------------------------

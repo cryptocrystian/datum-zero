@@ -69,7 +69,7 @@ describe("OPS-3 — a UI-imported registry asset spatially binds a detection at 
         detection: {
           confidence_score: 0.94, metric_delta: 12.0, metric_unit: "CELSIUS_DELTA",
           bounding_box: BBOX, latitude: LAT, longitude: LON, z_axis_offset: null,
-          class_label: "Cell", iec_category: 2, priority: "SCHEDULED",
+          class_label: "Cell", grounded_iec_category: 2,
           classification: "IEC TS 62446-3 Cat 2 — Cell: single hot cell — investigate at next scheduled maintenance.",
           standard_ref: "IEC TS 62446-3", radiometric: true, delta_provisional: false,
           visual_crop_url: "s3://datum-zero-dev/v", analytics_crop_url: "s3://datum-zero-dev/a",
