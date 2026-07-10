@@ -11,7 +11,7 @@
 
 /** Parse outcomes the inference RadiometricPort fails closed on (M2-1b). Reported SEPARATELY (M2-1f):
  *  UNKNOWN_FORMAT is a coverage gap (decoder backlog); NO_RADIOMETRIC_CHANNEL is an operator re-capture. */
-export type CaptureQualityStatus = "NO_RADIOMETRIC_CHANNEL" | "UNKNOWN_FORMAT" | "INVALID_INSPECTION_CONDITION";
+export type CaptureQualityStatus = "NO_RADIOMETRIC_CHANNEL" | "UNKNOWN_FORMAT" | "INVALID_INSPECTION_CONDITION" | "INCOMPLETE_CAPTURE_METADATA";
 
 export type RadiometricFormat = "FLIR_RJPEG" | "RADIOMETRIC_TIFF" | "DJI_RJPEG";
 
@@ -19,6 +19,7 @@ export const CAPTURE_QUALITY_STATUSES: readonly CaptureQualityStatus[] = [
   "NO_RADIOMETRIC_CHANNEL",
   "UNKNOWN_FORMAT",
   "INVALID_INSPECTION_CONDITION",
+  "INCOMPLETE_CAPTURE_METADATA",
 ];
 
 /**
@@ -30,6 +31,9 @@ export function captureQualityReason(
   status: CaptureQualityStatus,
   _detectedFormat?: string | null,
 ): string {
+  if (status === "INCOMPLETE_CAPTURE_METADATA") {
+    return "Incomplete capture metadata — GPS / timestamp missing; the capture can't be spatially bound or sun-positioned. Re-capture with location + time enabled.";
+  }
   if (status === "INVALID_INSPECTION_CONDITION") {
     return "Shaded capture — re-inspect the area without shading (IEC TS 62446-3 §5.1 requires a shading-free inspection).";
   }

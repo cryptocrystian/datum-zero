@@ -297,3 +297,18 @@ describe("radiometric edge check integrates into the firewall (M2-1d, CR-11/CR-2
     expect(report.files[0].checks.radiometric.status).toBe("PASS");
   });
 });
+
+describe("critical metadata completeness (M2-3a/CR-31 Part D)", () => {
+  it("missing GPS or timestamp is CRITICAL → not upload-eligible (fail-closed at the edge)", () => {
+    const noGps = validateCaptureSet([frame({ latitude: null, longitude: null })]);
+    expect(noGps.files[0].criticalMetadataMissing).toBe(true);
+    expect(noGps.files[0].uploadEligible).toBe(false);
+    const noTime = validateCaptureSet([frame({ capturedAt: null })]);
+    expect(noTime.files[0].criticalMetadataMissing).toBe(true);
+    expect(noTime.files[0].uploadEligible).toBe(false);
+  });
+  it("a complete frame is not critical (soft flags still allow upload)", () => {
+    const ok = validateCaptureSet([frame({})]);
+    expect(ok.files[0].criticalMetadataMissing).toBe(false);
+  });
+});

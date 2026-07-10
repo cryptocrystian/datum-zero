@@ -156,3 +156,20 @@ describe("INVALID_INSPECTION_CONDITION — Shadowing routes to data-quality (M2-
     expect(parsed.ok).toBe(true);
   });
 });
+
+describe("INCOMPLETE_CAPTURE_METADATA — critical-missing fail-closed (M2-3a/CR-31)", () => {
+  it("copy is evidence-framed + actionable and the status parses", () => {
+    const r = captureQualityReason("INCOMPLETE_CAPTURE_METADATA");
+    expect(r).toMatch(/GPS|timestamp/i);
+    expect(r).toMatch(/re-capture/i);
+    for (const w of ["violation", "breach", "penalty", "liable", "enforce"]) {
+      expect(r.toLowerCase()).not.toContain(w);
+    }
+    const parsed = parseCaptureQualityCallback({
+      ingestion_session_id: "s",
+      organization_id: "o",
+      status: "INCOMPLETE_CAPTURE_METADATA",
+    });
+    expect(parsed.ok).toBe(true);
+  });
+});

@@ -4,6 +4,8 @@ import { prisma, runWithOrg, CaptureModality } from "@dz/db";
 import { storage } from "@dz/storage";
 import { bindAirframe } from "@/lib/ingestion/airframe-binding";
 import { evaluateEnvironment } from "@/lib/field/environment";
+import { captureQualityReason } from "@/lib/quality/reason";
+import exifr from "exifr";
 import { getSession } from "@/lib/session";
 
 // Needs Node APIs (Buffer, crypto, storage SDK) — not the edge runtime.
@@ -119,6 +121,36 @@ export async function POST(req: NextRequest) {
       },
       scadaDc != null ? { dcLoadFraction: scadaDc } : null,
     );
+
+    // --- Part D fail-closed (M2-3a/CR-31): CRITICAL metadata (GPS + timestamp) must be present, else
+    // the capture can't be bound or sun-positioned. Record a CaptureQualityEvent — no MediaAsset, no
+    // anomaly, no dispatch. (The client firewall also blocks this at the edge; this is authoritative.)
+    let exif: Record<string, unknown> | null = null;
+    try { exif = await exifr.parse(bytes, { gps: true }); } catch { exif = null; }
+    const exLat = exif?.latitude as number | undefined;
+    const exLon = exif?.longitude as number | undefined;
+    const hasExifGps = exLat != null && exLon != null && !(exLat === 0 && exLon === 0);
+    const hasExifTime = exif?.DateTimeOriginal != null || exif?.CreateDate != null;
+    if (!hasExifGps || !hasExifTime) {
+      await prisma.ingestionSession.create({
+        data: {
+          id: sessionId, organizationId, modality: modality as CaptureModality,
+          pilotOrNodeId: binding.pilotId, rawStoragePath: stored.storagePath,
+          boundHardwareId: binding.hardwareId, isNdaaVerified: binding.isNdaaVerified, calibrationStatus,
+        },
+      });
+      await prisma.captureQualityEvent.create({
+        data: {
+          organizationId, ingestionSessionId: sessionId, status: "INCOMPLETE_CAPTURE_METADATA",
+          reason: captureQualityReason("INCOMPLETE_CAPTURE_METADATA"),
+          manufacturer: (exif?.Make as string | undefined) ?? null, model: (exif?.Model as string | undefined) ?? null,
+        },
+      });
+      return NextResponse.json(
+        { ingestionSessionId: sessionId, dataQuality: { status: "INCOMPLETE_CAPTURE_METADATA", reason: captureQualityReason("INCOMPLETE_CAPTURE_METADATA") } },
+        { status: 201 },
+      );
+    }
 
     // --- persist session + media (only reached when the airframe is verified) ---
     const session = await prisma.ingestionSession.create({

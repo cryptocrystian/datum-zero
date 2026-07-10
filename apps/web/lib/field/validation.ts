@@ -77,6 +77,7 @@ export interface FileResult {
   serial: string | null; // extracted airframe serial, for the authoritative server-side bind
   capturedAt: number | null;
   glareStatus: GlareStatus; // M2-3a/CR-31 solar-glare flag (UNVERIFIED until module orientation wired)
+  criticalMetadataMissing: boolean; // M2-3a/CR-31 no GPS or no timestamp — fail-closed at the edge
   checks: Record<CheckKey, CheckResult>;
   hardware?: Record<HardwareCheckKey, CheckResult>; // present only when a registry screen is supplied
 }
@@ -215,6 +216,19 @@ export function checkFrame(f: FrameMeta): CheckResult {
     return { status: "FAIL", reason: "No usable EXIF metadata on this frame." };
   }
   return { status: "WARN", reason: `Frame metadata incomplete — missing ${missing.join(", ")}.` };
+}
+
+/**
+ * Critical capture metadata (M2-3a/CR-31 Part D). GPS + timestamp are CRITICAL — without them a
+ * capture can't be spatially bound or sun-positioned. Their absence fails closed (not a soft flag);
+ * optional tags missing is non-critical (a soft WARN via checkFrame). Returns the missing critical
+ * field names (empty = complete). Pure.
+ */
+export function criticalMetadata(f: FrameMeta): string[] {
+  const missing: string[] = [];
+  if (!hasGps(f)) missing.push("GPS");
+  if (f.capturedAt == null) missing.push("timestamp");
+  return missing;
 }
 
 /** (6) Radiometric channel presence (M2-1d, CR-11/CR-22) — fail-closed at the edge on a clearly
@@ -485,6 +499,7 @@ export function validateCaptureSet(
     // Solar-glare flag (M2-3a/CR-31). Module orientation (registry) isn't wired to the client yet
     // → honest UNVERIFIED; glare FLAGS, it never blocks upload.
     const glare = checkGlare(f, null);
+    const critical = criticalMetadata(f); // M2-3a/CR-31 Part D: GPS/timestamp are critical
     const hardware = registry
       ? { ndaa: checkNdaa(f, config), airframe: checkAirframe(f, registry) }
       : undefined;
@@ -494,10 +509,11 @@ export function validateCaptureSet(
       name: f.name,
       index: f.index,
       status,
-      uploadEligible: status !== "FAIL",
+      uploadEligible: status !== "FAIL" && critical.length === 0,
       serial: f.serialNumber,
       capturedAt: f.capturedAt,
       glareStatus: glare.glareStatus,
+      criticalMetadataMissing: critical.length > 0,
       checks,
       hardware,
     };
