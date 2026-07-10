@@ -20,7 +20,9 @@ const UPLOAD_CHIP: Record<UploadStatus, string> = {
 const QUALITY: { key: CheckKey; label: string }[] = [
   { key: "frame", label: "Frame" },
   { key: "gps", label: "GPS" },
+  { key: "gpsIntegrity", label: "GPS Δ" },
   { key: "sunGlare", label: "Sun" },
+  { key: "glare", label: "Glare" },
   { key: "exposure", label: "Exposure" },
   { key: "overlap", label: "Overlap" },
 ];

@@ -15,7 +15,7 @@ import { checkGlare } from "./glare";
 
 export type CheckStatus = "PASS" | "WARN" | "FAIL";
 /** Quality checks (M1-05) run purely from EXIF; hardware checks (M1-06) also consult the registry. */
-export type CheckKey = "frame" | "gps" | "sunGlare" | "exposure" | "overlap" | "radiometric" | "gpsIntegrity";
+export type CheckKey = "frame" | "gps" | "sunGlare" | "exposure" | "overlap" | "radiometric" | "gpsIntegrity" | "glare";
 export type GlareStatus = "CLEAR" | "RISK" | "UNVERIFIED"; // M2-3a/CR-31 solar-glare flag
 export type CoverageStatus = "SUFFICIENT" | "PARTIAL" | "INSUFFICIENT" | "UNVERIFIED"; // M2-3a/CR-31 session coverage
 export type HardwareCheckKey = "ndaa" | "airframe";
@@ -487,18 +487,21 @@ export function validateCaptureSet(
 ): ValidationReport {
   const files: FileResult[] = frames.map((f, i) => {
     const prev = i > 0 ? frames[i - 1] : null;
+    // Solar-glare flag (M2-3a/CR-31). Module orientation (registry) isn't wired to the client yet
+    // → honest UNVERIFIED; glare FLAGS (WARN), it never blocks upload (never FAIL). Folded into the
+    // checks record (M2-3 close-out) so its result rolls into the file status AND surfaces in the UI;
+    // the specular path lights up automatically once M2-3b passes real orientation.
+    const glare = checkGlare(f, null);
     const checks: Record<CheckKey, CheckResult> = {
       frame: checkFrame(f),
       radiometric: checkRadiometric(f),
       gps: checkGps(f),
       gpsIntegrity: checkGpsIntegrity(f, prev, config),
       sunGlare: checkSunGlare(f, config),
+      glare: { status: glare.status, reason: glare.reason },
       exposure: checkExposure(f, config),
       overlap: checkOverlap(f, prev, config),
     };
-    // Solar-glare flag (M2-3a/CR-31). Module orientation (registry) isn't wired to the client yet
-    // → honest UNVERIFIED; glare FLAGS, it never blocks upload.
-    const glare = checkGlare(f, null);
     const critical = criticalMetadata(f); // M2-3a/CR-31 Part D: GPS/timestamp are critical
     const hardware = registry
       ? { ndaa: checkNdaa(f, config), airframe: checkAirframe(f, registry) }

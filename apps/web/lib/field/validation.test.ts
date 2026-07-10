@@ -312,3 +312,28 @@ describe("critical metadata completeness (M2-3a/CR-31 Part D)", () => {
     expect(ok.files[0].criticalMetadataMissing).toBe(false);
   });
 });
+
+describe("M2-3 close-out — glare + gpsIntegrity wired into the validator flow", () => {
+  it("both are present in every file's checks record (so worst-of aggregates them + the UI can render them)", () => {
+    const report = validateCaptureSet(line(3, 30), DEFAULT_VALIDATION_CONFIG);
+    for (const f of report.files) {
+      expect(f.checks.glare).toBeDefined();
+      expect(f.checks.gpsIntegrity).toBeDefined();
+    }
+  });
+
+  it("an implausible GPS jump surfaces as a gpsIntegrity WARN and rolls into the file status", () => {
+    const a = frame({}, 0);
+    const b = frame({ capturedAt: NOON + 2000, latitude: BASE_LAT + 1.0 }, 1); // ~111 km in 2 s
+    const report = validateCaptureSet([a, b], DEFAULT_VALIDATION_CONFIG);
+    expect(report.files[1].checks.gpsIntegrity.status).toBe("WARN");
+    expect(report.files[1].status).not.toBe("PASS");
+  });
+
+  it("glare flags but never blocks (WARN, never FAIL) — a nominal noon set stays glare-CLEAR + eligible", () => {
+    const report = validateCaptureSet(line(3, 30), DEFAULT_VALIDATION_CONFIG); // solar noon → glare PASS
+    expect(report.files.every((f) => f.checks.glare.status !== "FAIL")).toBe(true);
+    expect(report.files.every((f) => f.checks.glare.status === "PASS")).toBe(true);
+    expect(report.summary.eligible).toBe(3);
+  });
+});
