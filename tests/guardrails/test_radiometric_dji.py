@@ -39,3 +39,24 @@ def test_committed_dji_glue_carries_no_sdk_bindings():
     assert "_dji_sdk_native" in src, "glue must delegate to the confidential, env-pathed wrapper"
     for banned in ("ctypes", "cdll", "CDLL", "dlopen"):
         assert banned not in src, f"SDK bindings ({banned!r}) belong in the confidential wrapper, not committed glue"
+
+
+# --- M2-6a (CR-35): the DJI SDK must never enter a built IMAGE LAYER either (loaded at runtime). ---
+DOCKERIGNORE = ROOT / ".dockerignore"
+DOCKERFILES = [ROOT / "apps/web/Dockerfile", ROOT / "services/inference/Dockerfile"]
+
+
+def test_dockerignore_excludes_the_confidential_dji_sdk():
+    di = DOCKERIGNORE.read_text()
+    assert "_dji_sdk_native" in di, ".dockerignore must exclude the DJI wrapper (CR-22)"
+    assert "dji-thermal-sdk" in di, ".dockerignore must exclude the vendored DJI SDK tree (CR-22)"
+    assert "libdirp" in di, ".dockerignore must exclude the DIRP native lib (CR-22)"
+
+
+def test_no_dockerfile_copies_the_dji_sdk_into_a_layer():
+    """COPY/ADD must never pull a confidential DJI artifact into an image layer (loaded at runtime)."""
+    for df in DOCKERFILES:
+        for line in df.read_text().splitlines():
+            s = line.strip()
+            if s.startswith(("COPY", "ADD")):
+                assert not CONFIDENTIAL.search(s), f"{df.name}: must not copy the DJI SDK into a layer (DJI EULA §14, CR-22)"
