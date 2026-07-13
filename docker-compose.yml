@@ -71,11 +71,9 @@ services:
   # ==========================================================================
 
   # One-shot: apply migrations (which create datumzero_app + the RLS policies) and seed, as SUPERUSER.
+  # Reuses the workers image (a superset: pnpm + prisma + tsx + source) — no extra build.
   migrate:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-      target: build
+    image: dz-workers:local
     container_name: dz-migrate
     depends_on:
       postgres:
@@ -89,6 +87,7 @@ services:
     restart: "no"
 
   web:
+    image: dz-web:local
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -125,6 +124,7 @@ services:
     restart: unless-stopped
 
   workers:
+    image: dz-workers:local
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -145,6 +145,7 @@ services:
     restart: unless-stopped
 
   inference:
+    image: dz-inference:local
     build:
       context: .
       dockerfile: services/inference/Dockerfile

@@ -123,3 +123,107 @@ jobs:
         run: pnpm db:seed
       - name: E2E — DoD walking-skeleton path
         run: pnpm --filter @dz/web test:e2e
+
+  # M2-6b (CR-35) — build + validate the container images on a Docker-native runner (Docker ships on
+  # ubuntu-* runners), then prove the composed stack is production-parity. Makes CR-35's image ACs a
+  # PERMANENT gate rather than the host-side proxies M2-6a could run. Do not build Terraform (M2-6c)
+  # on images this job hasn't proven.
+  images:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://datumzero_app:dz_app_local_dev@localhost:5432/datum_zero
+      DIRECT_DATABASE_URL: postgresql://dz:dz_local_dev@localhost:5432/datum_zero
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # --- Step 1: build all three images (buildx + GHA layer cache), loaded into the local daemon ---
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          target: web
+          tags: dz-web:local
+          load: true
+          cache-from: type=gha,scope=webimg
+          cache-to: type=gha,mode=max,scope=webimg
+      - name: Build workers image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          target: workers
+          tags: dz-workers:local
+          load: true
+          cache-from: type=gha,scope=webimg
+          cache-to: type=gha,mode=max,scope=webimg
+      - name: Build inference image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/inference/Dockerfile
+          tags: dz-inference:local
+          load: true
+          cache-from: type=gha,scope=inference
+          cache-to: type=gha,mode=max,scope=inference
+
+      # --- Step 2: runtime assertions against the REAL images ---
+      - name: Non-root (all three images)
+        run: |
+          set -euo pipefail
+          for img in dz-web:local dz-workers:local dz-inference:local; do
+            uid="$(docker run --rm "$img" id -u)"
+            echo "$img -> uid $uid"
+            [ "$uid" != "0" ] || { echo "::error::$img runs as root"; exit 1; }
+          done
+      - name: Inference boots; FLIR/TIFF serve; DJI fails closed (no SDK)
+        run: docker run --rm -i dz-inference:local python - < scripts/ci/check_inference_runtime.py
+      - name: Inference /health endpoint
+        run: |
+          set -euo pipefail
+          docker run -d --name infer \
+            -e S3_ENDPOINT=http://127.0.0.1:9000 -e S3_BUCKET=x -e S3_REGION=us-east-1 \
+            -e S3_ACCESS_KEY_ID=x -e S3_SECRET_ACCESS_KEY=x \
+            -p 8000:8000 dz-inference:local
+          ok=""
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health >/dev/null; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs infer || true
+          docker rm -f infer >/dev/null
+          [ "$ok" = 1 ] || { echo "::error::inference /health never passed"; exit 1; }
+
+      # --- Step 3: REAL layer guardrails — scan actual built layers; fail the build on a violation ---
+      - name: Scan image layers (no DJI SDK, no secret in any layer)
+        run: |
+          set -euo pipefail
+          docker save dz-web:local       -o /tmp/web.tar
+          docker save dz-workers:local   -o /tmp/workers.tar
+          docker save dz-inference:local -o /tmp/inference.tar
+          python scripts/ci/scan_image_layers.py /tmp/web.tar /tmp/workers.tar /tmp/inference.tar
+
+      # --- Step 4: composed-stack DoD e2e (prod parity, PROVEN) — healthchecks + --wait, no sleeps ---
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Enable pnpm (corepack)
+        run: corepack enable
+      - name: Install workspace (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Prisma generate (for the host-run DoD e2e)
+        run: pnpm --filter @dz/db exec prisma generate
+      - name: Compose up the parity stack (reuses the images built above; --wait on healthchecks)
+        run: docker compose up -d --wait
+      - name: Stop the container worker (the in-process DoD worker owns the BullMQ queue)
+        run: docker compose stop workers
+      - name: DoD e2e against the composed stack
+        run: pnpm --filter @dz/web test:e2e
+      - name: Compose logs (on failure)
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+      - name: Compose down
+        if: always()
+        run: docker compose down -v
