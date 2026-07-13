@@ -53,3 +53,14 @@ export function enrichSession(session: Session, user: AdapterUser): Session {
   }
   return session;
 }
+
+/**
+ * Map an Auth.js sign-in error to a redirect target WITHOUT leaking account existence (M2-5a, CR-34).
+ * `AccessDenied` means the email is not concierge-provisioned/active — it MUST look identical to a
+ * successful send ("check your email"), or /signin becomes an enumeration oracle. Every other error is
+ * a genuine fault → a generic, non-revealing retry message. Pure — testable without booting NextAuth.
+ */
+export function signInErrorRedirect(errorType: string | undefined): string {
+  if (errorType === "AccessDenied") return "/signin?sent=1";
+  return "/signin?error=auth";
+}

@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { conciergeAdapter, enrichSession, isEligibleForSignIn } from "@/lib/auth-core";
 import { getEmailPort } from "@/lib/email";
+import { deliverMagicLink } from "@/lib/email/deliver";
 
 /**
  * M1-01 — real authentication (CR-20). Auth.js v5, email magic-link (no passwords), database
@@ -22,10 +23,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       server: { host: "localhost", port: 587 }, // unused — delivery goes through the EmailPort seam
       from: process.env.EMAIL_FROM ?? "no-reply@datumzero.local",
       async sendVerificationRequest({ identifier, url, expires }) {
-        // Delivery is behind the EmailPort seam (M2-5a, CR-34): the dev stub (console + temp file) in
-        // dev, AWS SES in prod, selected by env with credentials from the vault. The magic-link URL is
-        // never logged here. Fail-closed alert wrapping is added in commit 2.
-        await getEmailPort().sendMagicLink({ to: identifier, url, expiresAt: expires });
+        // Delivery is behind the EmailPort seam (M2-5a, CR-34): dev stub in dev, AWS SES in prod, creds
+        // from the vault. A failure is ALERTED server-side (never the url/token) but NOT surfaced — the
+        // send resolves so /signin stays generic and cannot become an enumeration oracle (fail closed).
+        await deliverMagicLink(
+          getEmailPort,
+          { to: identifier, url, expiresAt: expires },
+          (ctx) => {
+            // eslint-disable-next-line no-console
+            console.error(`[auth] ALERT magic-link delivery FAILED to ${ctx.to} via ${ctx.provider}: ${ctx.error}`);
+          },
+        );
       },
     }),
   ],

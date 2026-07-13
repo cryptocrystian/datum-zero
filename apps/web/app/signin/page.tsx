@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
 import { getSession } from "@/lib/session";
+import { signInErrorRedirect } from "@/lib/auth-core";
+import { devDeliveryAllowed } from "@/lib/email";
 
 // Magic-link sign-in (no passwords). Concierge-provisioned users only (CR-14).
 export default async function SignInPage({
@@ -13,9 +15,10 @@ export default async function SignInPage({
   if (await getSession()) redirect("/queue");
 
   // Dev convenience: no SMTP in dev, so surface the just-issued magic link right on the page.
-  // Prod never reads this (fail closed to "check your email"). Localhost-only, single-use token.
+  // Prod NEVER reads this — gated by the single devDeliveryAllowed() predicate (M2-5a, CR-34), the
+  // same one that gates the dev adapter's write. Localhost-only, single-use token.
   let devMagicLink: string | null = null;
-  if (sp.sent && process.env.NODE_ENV !== "production") {
+  if (sp.sent && devDeliveryAllowed()) {
     try {
       const [{ readFile }, os, path] = await Promise.all([
         import("node:fs/promises"),
@@ -59,12 +62,9 @@ export default async function SignInPage({
           )}
         </div>
       ) : null}
-      {sp.error === "denied" ? (
-        <p className="rounded-sm border border-tactical-red px-4 py-3 font-mono text-xs leading-relaxed text-tactical-red">
-          That address isn&apos;t provisioned for cockpit access. Accounts are set up by Datum Zero —
-          contact your administrator to be added.
-        </p>
-      ) : sp.error ? (
+      {sp.error ? (
+        // Generic, non-revealing (M2-5a, CR-34): an un-provisioned email is redirected to ?sent=1, not
+        // here, so this never confirms or denies account existence. Only genuine faults land here.
         <p className="rounded-sm border border-tactical-red px-4 py-3 font-mono text-xs leading-relaxed text-tactical-red">
           Sign-in couldn&apos;t be completed. Please try again, or contact Datum Zero if this persists.
         </p>
@@ -78,10 +78,11 @@ export default async function SignInPage({
             await signIn("nodemailer", { email, redirectTo: sp.callbackUrl ?? "/queue" });
           } catch (error) {
             // signIn throws a NEXT_REDIRECT on success (→ verify-request); let that propagate.
-            // An AuthError means the sign-in was refused (AccessDenied = un-provisioned email,
-            // CR-14). Fail closed to a friendly message instead of the raw Auth.js error page.
+            // An AuthError means the sign-in was refused. NO enumeration (M2-5a, CR-34): AccessDenied
+            // (un-provisioned/inactive email) is mapped to the SAME generic "check your email" as a
+            // successful send; only genuine faults show a generic retry message.
             if (error instanceof AuthError) {
-              redirect(`/signin?error=${error.type === "AccessDenied" ? "denied" : "auth"}`);
+              redirect(signInErrorRedirect(error.type));
             }
             throw error;
           }
