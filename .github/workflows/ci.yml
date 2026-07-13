@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pytest
+      - run: pip install pytest pyyaml
       - name: Manifest compliance guardrails (CR-12, CR-02, governance)
         run: pytest tests/guardrails -q
 
@@ -30,7 +30,10 @@ jobs:
           node-version: "20"
       - name: Validate Prisma schema
         working-directory: packages/db
-        run: npx --yes prisma@latest validate --schema prisma/schema.prisma
+        # Pin to the project's Prisma major (package.json: prisma ^6.1.0). `prisma@latest` is now v7,
+        # which dropped the `datasource url`/`directUrl` properties this schema (and the RLS dual-role,
+        # CR-20) relies on — a validator-version drift, not a schema error.
+        run: npx --yes prisma@6 validate --schema prisma/schema.prisma
       - name: Validate work-order JSON contract
         run: |
           npx --yes ajv-cli@5 compile -s packages/adapters/contracts/work-order.schema.json \

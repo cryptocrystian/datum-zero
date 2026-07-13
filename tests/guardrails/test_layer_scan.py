@@ -66,13 +66,38 @@ def test_env_file_in_a_layer_is_caught(tmp_path):
     assert v and any("env file baked" in s for s in v)
 
 
-def test_secret_literal_in_a_layer_is_caught(tmp_path):
-    tar = _docker_save([_layer({"app/config.json": b'{"SES_SMTP_PASSWORD": "AKIAsecretvalue123"}'})], tmp_path)
+def test_secret_literal_in_a_config_file_is_caught(tmp_path):
+    tar = _docker_save([_layer({"app/config.json": b'{"SES_SMTP_PASSWORD": "s3cr3t-value-123"}'})], tmp_path)
     v = scan_tar(tar)
     assert v and any("secret literal" in s for s in v)
 
 
+def test_real_aws_key_in_source_is_caught(tmp_path):
+    tar = _docker_save([_layer({"app/leak.ts": b'const k = "AKIAIOSFODNN7EXAMPLE";'})], tmp_path)
+    v = scan_tar(tar)
+    assert v and any("credential value" in s for s in v)
+
+
+def test_pem_private_key_is_caught(tmp_path):
+    tar = _docker_save([_layer({"app/id_rsa": b"-----BEGIN RSA PRIVATE KEY-----\nMIIabc\n"})], tmp_path)
+    v = scan_tar(tar)
+    assert v and any("credential value" in s for s in v)
+
+
+def test_source_referencing_env_var_name_is_not_flagged(tmp_path):
+    # Regression for the first real CI run: source MUST name env vars to read them — not a secret.
+    src = b"const t = process.env.AUTH_SECRET;\nif (x !== process.env.INFERENCE_CALLBACK_TOKEN) {}\n"
+    tar = _docker_save([_layer({"apps/web/app/api/v1/inference/callback/route.ts": src})], tmp_path)
+    assert scan_tar(tar) == []
+
+
+def test_node_modules_type_decl_is_not_flagged(tmp_path):
+    # next-auth ships `AUTH_SECRET: string` type decls — third-party, not our secret.
+    tar = _docker_save([_layer({"repo/node_modules/next-auth/index.d.ts": b"interface E { AUTH_SECRET: string }"})], tmp_path)
+    assert scan_tar(tar) == []
+
+
 def test_ok_files_without_secrets_pass(tmp_path):
-    # A file that merely NAMES an env var (no literal assignment) is fine.
+    # A source file that merely NAMES an env var (no baked value) is fine.
     tar = _docker_save([_layer({"app/secrets.js": b"const p = process.env.SES_SMTP_PASSWORD;"})], tmp_path)
     assert scan_tar(tar) == []

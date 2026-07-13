@@ -28,14 +28,27 @@ DJI = re.compile(r"(_dji_sdk_native|dji[-_]?thermal[-_]?sdk|libdirp|/dirp[./]|(^
 # A committed env file anywhere in a layer.
 ENVFILE = re.compile(r"(^|/)\.env(\.[^/]+)?$")
 
-# Secret env vars assigned a non-empty literal inside a layer file (baked secret).
+# Real leaked-credential VALUE formats — near-zero false positive, flagged in any of OUR files
+# (an AWS access-key id, or a PEM private-key block).
+CREDENTIAL = re.compile(rb"(AKIA[0-9A-Z]{16}|-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----)")
+
+# A secret-named var assigned a QUOTED non-placeholder literal — scanned ONLY in config files. Source
+# code legitimately NAMES these env vars (`process.env.AUTH_SECRET`, a `AUTH_SECRET: string` type),
+# so scanning source for the NAME false-positives — a baked secret VALUE lives in a config/.env file.
 SECRET_ASSIGN = re.compile(
-    rb"""(SES_SMTP_PASSWORD|AUTH_SECRET|S3_SECRET_ACCESS_KEY|JIRA_API_TOKEN|INFERENCE_CALLBACK_TOKEN|INGEST_API_TOKEN)['"]?\s*[:=]\s*['"]?[^\s'"]+""",
+    rb"""(SES_SMTP_PASSWORD|AUTH_SECRET|S3_SECRET_ACCESS_KEY|JIRA_API_TOKEN|INFERENCE_CALLBACK_TOKEN|INGEST_API_TOKEN)['"]?\s*[:=]\s*['"][^'"\s]{8,}['"]""",
 )
 
-# Only content-scan plausibly-textual, smallish files (avoid binaries / huge blobs).
-_TEXT_SUFFIXES = (".env", ".txt", ".json", ".sh", ".yaml", ".yml", ".conf", ".ini", ".js", ".ts", ".py", "")
+# Config-ish files that may legitimately hold a secret VALUE (unlike source, which only names vars).
+_CONFIG_SUFFIXES = (".env", ".json", ".yaml", ".yml", ".conf", ".ini", ".properties", ".cfg", ".txt")
 _MAX_CONTENT_BYTES = 512 * 1024
+
+
+def _is_vendor(name: str) -> bool:
+    """Third-party trees legitimately reference env-var names / hold arbitrary data; a real secret of
+    OURS lives in our files or a committed .env (caught by name). Skip their CONTENT to avoid noise."""
+    p = "/" + name
+    return "/node_modules/" in p or "/site-packages/" in p or "/.venv/" in p
 
 
 def _iter_layer_tars(outer: tarfile.TarFile):
@@ -68,16 +81,24 @@ def scan_tar(path: str) -> list[str]:
                     continue
                 name = entry.name
                 base = PurePosixPath(name).name
+                # Path checks apply to EVERY entry (incl. vendored trees).
                 if DJI.search(name):
                     violations.append(f"DJI SDK artifact in layer {layer_name}: {name} (DJI EULA §14, CR-22)")
                     continue
                 if ENVFILE.search("/" + name):
                     violations.append(f"env file baked in layer {layer_name}: {name} (secret risk, CR-35)")
                     continue
-                if entry.isfile() and entry.size <= _MAX_CONTENT_BYTES and base.endswith(_TEXT_SUFFIXES):
-                    ef = inner.extractfile(entry)
-                    if ef is not None and SECRET_ASSIGN.search(ef.read()):
-                        violations.append(f"secret literal baked in layer {layer_name}: {name} (CR-35)")
+                # Content checks only for OUR reasonably-sized files.
+                if not entry.isfile() or entry.size > _MAX_CONTENT_BYTES or _is_vendor(name):
+                    continue
+                ef = inner.extractfile(entry)
+                if ef is None:
+                    continue
+                content = ef.read()
+                if CREDENTIAL.search(content):
+                    violations.append(f"credential value baked in layer {layer_name}: {name} (CR-35)")
+                elif base.endswith(_CONFIG_SUFFIXES) and SECRET_ASSIGN.search(content):
+                    violations.append(f"secret literal baked in layer {layer_name}: {name} (CR-35)")
             inner.close()
     return violations
 
