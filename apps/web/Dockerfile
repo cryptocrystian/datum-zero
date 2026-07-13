@@ -6,8 +6,10 @@ ARG NODE_VERSION=22-bookworm-slim
 
 # ---- deps: install the pnpm workspace, cached on the manifests ----
 FROM node:${NODE_VERSION} AS deps
-ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
-RUN corepack enable
+# COREPACK_HOME is a SHARED, world-readable location so the pinned pnpm is available to the non-root
+# runtime user without corepack trying to download it into a (non-writable) $HOME at container start.
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH COREPACK_HOME=/opt/corepack
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate && chmod -R a+rX /opt/corepack
 WORKDIR /repo
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
@@ -45,6 +47,6 @@ CMD ["node", "apps/web/server.js"]
 FROM build AS workers
 ENV NODE_ENV=production
 WORKDIR /repo
-RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs worker
+RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs --create-home worker
 USER worker
 CMD ["pnpm", "--filter", "@dz/db", "exec", "tsx", "../../apps/web/lib/outbox/worker-main.ts"]
