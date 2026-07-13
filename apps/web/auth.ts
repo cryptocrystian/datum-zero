@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { conciergeAdapter, enrichSession, isEligibleForSignIn } from "@/lib/auth-core";
+import { getEmailPort } from "@/lib/email";
 
 /**
  * M1-01 — real authentication (CR-20). Auth.js v5, email magic-link (no passwords), database
@@ -18,30 +19,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: "/signin", verifyRequest: "/signin?sent=1", error: "/signin?error=1" },
   providers: [
     Nodemailer({
-      server: { host: "localhost", port: 587 }, // unused in dev — the link is logged, not emailed
+      server: { host: "localhost", port: 587 }, // unused — delivery goes through the EmailPort seam
       from: process.env.EMAIL_FROM ?? "no-reply@datumzero.local",
-      async sendVerificationRequest({ identifier, url }) {
-        // Dev: no SMTP. Surface the magic link two ways so it's easy to find — a prominent server
-        // log AND a temp file that /signin reads to show a one-click link. Prod: swap for real delivery.
-        const rule = "═".repeat(72);
-        // eslint-disable-next-line no-console
-        console.log(`\n${rule}\n🔗 [auth] DEV magic sign-in link for ${identifier}:\n${url}\n${rule}\n`);
-        if (process.env.NODE_ENV !== "production") {
-          try {
-            const [{ writeFile }, os, path] = await Promise.all([
-              import("node:fs/promises"),
-              import("node:os"),
-              import("node:path"),
-            ]);
-            await writeFile(
-              path.join(os.tmpdir(), "dz-magic-link.json"),
-              JSON.stringify({ identifier, url, at: Date.now() }),
-              "utf8",
-            );
-          } catch {
-            // best-effort dev convenience; the server log above is always the fallback
-          }
-        }
+      async sendVerificationRequest({ identifier, url, expires }) {
+        // Delivery is behind the EmailPort seam (M2-5a, CR-34): the dev stub (console + temp file) in
+        // dev, AWS SES in prod, selected by env with credentials from the vault. The magic-link URL is
+        // never logged here. Fail-closed alert wrapping is added in commit 2.
+        await getEmailPort().sendMagicLink({ to: identifier, url, expiresAt: expires });
       },
     }),
   ],
