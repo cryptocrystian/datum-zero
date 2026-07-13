@@ -219,7 +219,10 @@ jobs:
       - name: Prisma generate (for the host-run DoD e2e)
         run: pnpm --filter @dz/db exec prisma generate
       - name: Compose up the parity stack (reuses the images built above; --wait on healthchecks)
-        run: docker compose up -d --wait
+        # --wait only on the long-running services: the one-shot migrate + minio-init EXIT (0), and
+        # `up --wait` treats an exited service as a wait failure. migrate still runs (web/workers gate
+        # on `service_completed_successfully`), so this waits for a fully-migrated, healthy stack.
+        run: docker compose up -d --wait web workers inference
       - name: Stop the container worker (the in-process DoD worker owns the BullMQ queue)
         run: docker compose stop workers
       - name: DoD e2e against the composed stack
