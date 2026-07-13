@@ -108,6 +108,13 @@ export default async function SignInPage({
           [ Send Magic Link ]
         </button>
       </form>
+
+      {/* Static, UNCONDITIONAL guidance (M2-6a Step 0). Shown to every visitor regardless of state — it
+          never varies by whether an address exists, so it restores the concierge affordance without
+          reintroducing the account-enumeration oracle (M2-5a, CR-34). */}
+      <p className="text-center font-mono text-[10px] leading-relaxed text-datum-slate">
+        Access is concierge-provisioned. Contact your administrator if you need access.
+      </p>
     </main>
   );
 }
