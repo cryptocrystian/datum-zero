@@ -10,6 +10,7 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertRuntimeRoleNotSuperuser } from "@dz/db";
 import { startWorker } from "./worker";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -21,6 +22,10 @@ for (const file of [".env.local", ".env"]) {
     // File absent — fine.
   }
 }
+
+// Fail closed (M2-6a, CR-35): refuse to start if the runtime DB role is a superuser — a collapsed
+// dual-role would silently disable RLS tenant isolation. Migrations run separately via directUrl.
+await assertRuntimeRoleNotSuperuser();
 
 const worker = startWorker();
 // eslint-disable-next-line no-console

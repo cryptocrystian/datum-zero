@@ -63,6 +63,114 @@ services:
       exit 0;
       "
 
+  # ==========================================================================
+  # Application tier (M2-6a, CR-35) — prod PARITY + the on-prem deployment artifact.
+  # RLS dual-role is preserved: the runtime (web/workers) connects as the NON-SUPERUSER datumzero_app;
+  # migrations + seed run once as the elevated superuser (dz) via directUrl. Do NOT collapse the two.
+  # Local dev credentials only — production uses IAM roles + AWS Secrets Manager, never these values.
+  # ==========================================================================
+
+  # One-shot: apply migrations (which create datumzero_app + the RLS policies) and seed, as SUPERUSER.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: build
+    container_name: dz-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://dz:dz_local_dev@postgres:5432/datum_zero
+      DIRECT_DATABASE_URL: postgresql://dz:dz_local_dev@postgres:5432/datum_zero
+    command: >
+      sh -c "pnpm --filter @dz/db exec prisma migrate deploy &&
+             pnpm --filter @dz/db run seed"
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: web
+    container_name: dz-web
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      # Runtime connects as the NON-SUPERUSER role (RLS enforced); DIRECT is used only by migrate.
+      DATABASE_URL: postgresql://datumzero_app:dz_app_local_dev@postgres:5432/datum_zero
+      DIRECT_DATABASE_URL: postgresql://dz:dz_local_dev@postgres:5432/datum_zero
+      REDIS_URL: redis://redis:6379
+      AUTH_SECRET: local_dev_only_change_in_prod
+      INFERENCE_CALLBACK_TOKEN: local_dev_callback_token
+      INGEST_API_TOKEN: local_dev_ingest_token
+      EMAIL_FROM: no-reply@datumzero.local
+      # Email: prod defaults to SES (creds from the vault, M2-5a). Sign-in email is inert in this
+      # prod-parity stack until SES_SMTP_* are provided — the DoD e2e does not sign in by email.
+      STORAGE_DRIVER: s3
+      S3_BUCKET: datum-zero-dev
+      S3_REGION: us-east-1
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_FORCE_PATH_STYLE: "true"
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  workers:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: workers
+    container_name: dz-workers
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://datumzero_app:dz_app_local_dev@postgres:5432/datum_zero
+      DIRECT_DATABASE_URL: postgresql://dz:dz_local_dev@postgres:5432/datum_zero
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+
+  inference:
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+    container_name: dz-inference
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      INFERENCE_CALLBACK_URL: http://web:3000/api/v1/inference/callback
+      INFERENCE_CALLBACK_TOKEN: local_dev_callback_token
+      S3_BUCKET: datum-zero-dev
+      S3_REGION: us-east-1
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_FORCE_PATH_STYLE: "true"
+      # DJI Thermal SDK is CONFIDENTIAL and NEVER baked into the image (DJI EULA §14, CR-22). To enable
+      # the DJI decoder locally, provide it at runtime from a PRIVATE path (FLIR/TIFF work without it;
+      # the DJI decoder fails closed when absent). Uncomment + point at your vendored SDK:
+      # DJI_THERMAL_SDK_PATH: /opt/dji-thermal-sdk
+    # volumes:
+    #   - ${DJI_THERMAL_SDK_HOST_PATH:?set to your private DJI SDK path}:/opt/dji-thermal-sdk:ro
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
 volumes:
   dz_pg:
   dz_redis:

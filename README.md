@@ -69,3 +69,40 @@ otherwise). Credentials come **only from the secrets vault** (env-backed) — ne
 
 > These steps are **not automated**. Flag the architect thread once the sending domain is authenticated
 > and SES production access is granted.
+
+## Deployment — containerized, AWS target (M2-6, CR-35)
+
+**Target: AWS, fully containerized.** ECS Fargate (web · inference · workers) · RDS Postgres (RLS
+intact) · ElastiCache Redis (BullMQ) · S3 · Secrets Manager · SES; infrastructure as code. AWS keeps
+the disclosed-subprocessor surface minimal (already there for Secrets Manager + SES), gives SOC 2 a
+scopeable environment and a GovCloud path, and — because everything ships as containers — **preserves
+the on-prem/edge option** for defense-adjacent clients. Every alternative (Vercel/Fly/Railway) adds a
+subprocessor to disclose. Epic sequence: **M2-6a** containerize + compose parity *(done)* · M2-6b
+Terraform baseline · M2-6c CI/CD · M2-6d observability · M2-6e domain/TLS/SES access.
+
+**Images** (`apps/web/Dockerfile` targets `web` + `workers`; `services/inference/Dockerfile`) are
+multi-stage, run **non-root**, expose health checks, and **never bake a secret**. The runtime connects
+as the non-superuser `datumzero_app` (RLS enforced); migrations run as the elevated role via
+`directUrl` — the worker fails closed at boot if the two are collapsed (`assertRuntimeRoleNotSuperuser`).
+
+**Local / on-prem parity** (`docker compose`, prod-parity + the on-prem artifact):
+
+```bash
+docker compose up --build -d        # postgres, redis, minio, inference, web, workers
+#   the one-shot `migrate` service runs `prisma migrate deploy` + seed as the superuser
+# DoD e2e against the composed stack (point it at the composed Postgres/Redis; stop any host PG on 5432):
+pnpm --filter @dz/web test:e2e
+```
+
+### ⚠ Shipping on-prem/edge images is *distribution* — check the legal backlog FIRST
+
+Building images for **our own SaaS operation** is fine. **Shipping an image to a client (on-prem/edge)
+is distribution**, which activates obligations logged in [`docs/LEGAL-REVIEW-BACKLOG.md`](./docs/LEGAL-REVIEW-BACKLOG.md):
+
+- **DJI Thermal SDK — never in any image** (Confidential, DJI EULA §14, CR-22). It loads at runtime
+  from `DJI_THERMAL_SDK_PATH` (mounted from a private source). If ever bundled for on-prem, DJI EULA
+  **§3.3** applies (execution-form only, bundled, no separate fee, DJI copyright notice).
+- **`flyr` (FLIR decode) — EUPL-1.2** light copyleft: redistribution can require providing `flyr`'s
+  source. SaaS backend is fine; an on-prem/edge build is not, until reviewed.
+
+Do **not** ship an on-prem/edge build without clearing both in the legal backlog.

@@ -58,4 +58,27 @@ export function runWithOrg<T>(organizationId: string, fn: () => Promise<T>): Pro
   return orgContext.run(organizationId, fn);
 }
 
+/**
+ * Fail-closed runtime-role check (M2-6a, CR-35). The runtime (web + worker) MUST connect as the
+ * non-superuser `datumzero_app` so RLS tenant isolation is actually enforced — a superuser has
+ * BYPASSRLS and would silently disable it. Migrations/seed run separately as the elevated role via
+ * `directUrl`. Call this at service boot; it THROWS if the connected role is a superuser, so a
+ * misconfigured container (both roles collapsed) fails to start instead of leaking across tenants.
+ */
+export async function assertRuntimeRoleNotSuperuser(): Promise<void> {
+  const rows = await prisma.$queryRaw<Array<{ role: string; is_super: boolean }>>`
+    SELECT current_user AS role, rolsuper AS is_super
+    FROM pg_roles WHERE rolname = current_user`;
+  const row = rows[0];
+  if (!row) {
+    throw new Error("runtime-role check: could not resolve the current DB role — failing closed (CR-35).");
+  }
+  if (row.is_super) {
+    throw new Error(
+      `runtime-role check FAILED: DB role '${row.role}' is a SUPERUSER — RLS tenant isolation would be ` +
+        "bypassed. Runtime must connect as the non-superuser datumzero_app (CR-20/CR-35).",
+    );
+  }
+}
+
 export * from "@prisma/client";
