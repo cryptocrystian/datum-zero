@@ -1,0 +1,52 @@
+# Build context hygiene for all images (M2-6a, CR-35). Keep secrets, local tooling, the Confidential
+# DJI SDK, and heavy/irrelevant trees OUT of the build context so they can never land in an image layer.
+
+# --- secrets: NEVER in an image (MANIFEST §3) ---
+.env
+.env.*
+**/.env
+**/.env.*
+
+# --- DJI Thermal SDK — Confidential (DJI EULA §14, CR-22). Must never enter any layer. ---
+services/inference/app/radiometric/_dji_sdk_native.py
+services/inference/vendor/dji-thermal-sdk/
+**/libdirp*
+**/dirp/
+
+# --- dependencies / build output (reinstalled or rebuilt inside the image) ---
+**/node_modules
+**/.next
+**/dist
+**/build
+**/.turbo
+**/*.tsbuildinfo
+
+# --- Python local envs / caches ---
+**/.venv
+**/.venv-training
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+
+# --- local tooling / agent config (not part of any service) ---
+.claude/
+.git
+.github
+.vscode
+.idea
+
+# --- tests, fixtures, coverage (not needed at runtime) ---
+**/*.test.ts
+**/e2e
+**/tests/fixtures
+**/coverage
+tests/guardrails
+
+# --- docs / misc ---
+**/*.md
+!services/inference/app/models/NOTICE
+**/*.log
+.DS_Store
+docker-compose*.yml
