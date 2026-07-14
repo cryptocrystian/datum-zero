@@ -7,6 +7,8 @@ settings:
 overrides:
   '@auth/core': 0.40.0
   ioredis: 5.10.1
+  prisma: '6'
+  '@prisma/client': '6'
 
 importers:
 
@@ -126,11 +128,11 @@ importers:
   packages/db:
     dependencies:
       '@prisma/client':
-        specifier: ^6.1.0
+        specifier: '6'
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
     devDependencies:
       prisma:
-        specifier: ^6.1.0
+        specifier: '6'
         version: 6.19.3(typescript@5.9.3)
       tsx:
         specifier: ^4.19.0
@@ -175,7 +177,7 @@ packages:
   '@auth/prisma-adapter@2.10.0':
     resolution: {integrity: sha512-EliOQoTjGK87jWWqnJvlQjbR4PjQZQqtwRwPAe108WwT9ubuuJJIrL68aNnQr4hFESz6P7SEX2bZy+y2yL37Gw==}
     peerDependencies:
-      '@prisma/client': '>=2.26.0 || >=3 || >=4 || >=5 || >=6'
+      '@prisma/client': '6'
 
   '@aws-sdk/checksums@3.1000.12':
     resolution: {integrity: sha512-RgNDWfhNRIlNEzePIRrYTNi/6q+wwRMMapojn8YVzw4ZcJRa/gxVMtUbeZARR1gmopuv6oIhMbY7J66qIQ0ynw==}
@@ -870,7 +872,7 @@ packages:
     resolution: {integrity: sha512-mKq3jQFhjvko5LTJFHGilsuQs+W+T3Gm451NzuTDGQxwCzwXHYnIu2zGkRoW+Exq3Rob7yp2MfzSrdIiZVhrBg==}
     engines: {node: '>=18.18'}
     peerDependencies:
-      prisma: '*'
+      prisma: '6'
       typescript: '>=5.1.0'
     peerDependenciesMeta:
       prisma:

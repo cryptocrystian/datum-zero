@@ -28,7 +28,9 @@
   "pnpm": {
     "overrides": {
       "@auth/core": "0.40.0",
-      "ioredis": "5.10.1"
+      "ioredis": "5.10.1",
+      "prisma": "6",
+      "@prisma/client": "6"
     }
   }
 }
