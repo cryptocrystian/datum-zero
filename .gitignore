@@ -44,6 +44,24 @@ services/inference/vendor/dji-thermal-sdk/
 .claude/CLAUDE.md
 .claude/launch.json
 
+# Terraform (M2-6c) — provider cache + STATE never committed. State can contain resource metadata and
+# secret material; it lives in the S3 backend. `.terraform.lock.hcl` IS committed (deterministic
+# provider versions). Real values live in tfvars, which stay local — only *.tfvars.example is tracked.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
 # misc
 .DS_Store
 *.log
