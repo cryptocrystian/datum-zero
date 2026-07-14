@@ -27,6 +27,7 @@ TF_DIR = ROOT / "terraform"
 CI = ROOT / ".github/workflows/ci.yml"
 SECRETS_TF = TF_DIR / "modules/secrets/main.tf"
 RDS_TF = TF_DIR / "modules/rds/main.tf"
+ECS_TF = TF_DIR / "modules/ecs/main.tf"
 REDIS_TF = TF_DIR / "modules/redis/main.tf"
 STORAGE_TF = TF_DIR / "modules/storage/main.tf"
 TFVARS_EXAMPLE = TF_DIR / "envs/prod/terraform.tfvars.example"
@@ -152,6 +153,29 @@ def test_rds_master_password_is_aws_managed():
 
 
 # --- the RLS dual-role is not collapsible ---
+
+
+def test_long_running_tasks_never_receive_the_elevated_db_url():
+    """
+    The stronger half of the dual-role: the username validation stops the two ROLES being the same,
+    but nothing stops someone handing the elevated CONNECTION STRING to a runtime service. A task
+    that can reach DIRECT_DATABASE_URL can connect as the migration role and bypass RLS regardless of
+    what db_app_username says.
+
+    Only a one-shot migrate task may mount it (M2-6d). web/inference/workers never may.
+    """
+    body = ECS_TF.read_text()
+    for service in ("web", "inference", "workers"):
+        block = re.search(
+            rf'resource\s+"aws_ecs_task_definition"\s+"{service}"\s*\{{(.*?)\n\}}', body, re.S
+        )
+        assert block, f"ecs module must define a task definition for {service}"
+        assert "DIRECT_DATABASE_URL" not in block.group(1), (
+            f"the {service} task definition mounts DIRECT_DATABASE_URL — that is the ELEVATED "
+            "migration role (Prisma directUrl). A long-running service holding it can connect as "
+            "the migration role and bypass every RLS policy, with no test failing (CR-20/CR-35). "
+            "Only a one-shot migrate task may reference it."
+        )
 
 
 def test_runtime_db_role_cannot_equal_the_master_role():
