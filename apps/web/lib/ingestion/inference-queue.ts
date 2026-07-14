@@ -28,13 +28,19 @@ export async function enqueueSessionInference(
   ingestionSessionId: string,
   organizationId: string,
 ): Promise<void> {
+  // Retry policy is env-configurable (an ops knob; tests set it low to fail fast). Defaults: 5
+  // attempts, 2s exponential backoff — rides out a transient inference blip, bounded so a genuinely
+  // unreachable service surfaces as FAILED rather than retrying forever. Read here (not module load)
+  // so it stays dynamic.
+  const attempts = Number(process.env.INFERENCE_MAX_ATTEMPTS ?? 5);
+  const backoffMs = Number(process.env.INFERENCE_BACKOFF_MS ?? 2000);
   await getInferenceQueue().add(
     "process",
     { ingestionSessionId, organizationId },
     {
       jobId: ingestionSessionId,
-      attempts: 5,
-      backoff: { type: "exponential", delay: 2000 },
+      attempts,
+      backoff: { type: "exponential", delay: backoffMs },
       removeOnComplete: 1000,
       removeOnFail: false,
     },

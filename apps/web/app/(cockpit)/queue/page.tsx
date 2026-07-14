@@ -2,9 +2,11 @@ import { runWithOrg } from "@dz/db";
 import { requireSession } from "@/lib/session";
 import { listReviewQueue, listOrgAssets, listOrgIntegrations } from "@/lib/qa/review";
 import { listCaptureQualityEvents, listUnsupportedFormatCounts } from "@/lib/quality/events";
+import { listFailedInferenceSessions } from "@/lib/ingestion/sessions";
 import { ReviewQueue } from "./ReviewQueue";
 import { CaptureQualityStrip } from "./CaptureQualityStrip";
 import { UnsupportedFormats } from "./UnsupportedFormats";
+import { ProcessingFailures } from "./ProcessingFailures";
 
 // Always render the live queue (no caching) — it reflects DB state after each review action.
 export const dynamic = "force-dynamic";
@@ -14,14 +16,17 @@ export default async function QueuePage() {
   const session = await requireSession();
   const orgId = session.organizationId;
   const reviewer = { id: session.userId, name: session.name ?? session.email ?? session.userId };
-  const [items, assets, integrations, qualityEvents, unsupportedFormats] = await runWithOrg(orgId, async () =>
-    Promise.all([
-      listReviewQueue(orgId),
-      listOrgAssets(orgId),
-      listOrgIntegrations(orgId),
-      listCaptureQualityEvents(orgId),
-      listUnsupportedFormatCounts(orgId),
-    ]),
+  const [items, assets, integrations, qualityEvents, unsupportedFormats, failedSessions] = await runWithOrg(
+    orgId,
+    async () =>
+      Promise.all([
+        listReviewQueue(orgId),
+        listOrgAssets(orgId),
+        listOrgIntegrations(orgId),
+        listCaptureQualityEvents(orgId),
+        listUnsupportedFormatCounts(orgId),
+        listFailedInferenceSessions(orgId),
+      ]),
   );
 
   return (
@@ -45,6 +50,9 @@ export default async function QueuePage() {
       </header>
 
       <ReviewQueue items={items} assets={assets} integrations={integrations} />
+
+      {/* A capture must never vanish into the queue: inference failures are surfaced (M2-7, CR-36). */}
+      <ProcessingFailures sessions={failedSessions} />
 
       {/* Distinct, non-anomaly section: captures rejected for a data-quality reason (M2-1d, CR-25). */}
       <CaptureQualityStrip events={qualityEvents} />

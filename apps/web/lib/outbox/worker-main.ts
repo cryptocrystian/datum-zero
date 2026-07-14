@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertRuntimeRoleNotSuperuser } from "@dz/db";
 import { startWorker } from "./worker";
+import { startInferenceWorker } from "../ingestion/inference-worker";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 // .env.local first so it wins; then .env fills anything not already set.
@@ -36,8 +37,13 @@ worker.on("failed", (job, err) => {
   console.error(`[outbox] job ${job?.id} failed: ${err.message}`);
 });
 
+// M2-7/CR-36 — the ingestion→inference worker runs in the same process (the workers container).
+const inferenceWorker = startInferenceWorker();
+// eslint-disable-next-line no-console
+console.log("[inference] session-inference worker started");
+
 async function shutdown() {
-  await worker.close();
+  await Promise.all([worker.close(), inferenceWorker.close()]);
   process.exit(0);
 }
 process.on("SIGINT", shutdown);
