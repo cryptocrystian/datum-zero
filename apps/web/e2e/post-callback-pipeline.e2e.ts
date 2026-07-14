@@ -119,8 +119,14 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-describe("M0 walking-skeleton — Definition of Done (end-to-end)", () => {
-  it("runs seed → ingest → inference → bind → classify → approve → fan-out dispatch → audit", () =>
+// NOTE (M2-7c): this is NOT the DoD / end-to-end test — it STARTS AT the inference callback (it POSTs
+// a detection payload directly), so it does not exercise the real upload→queue→worker→inference trigger.
+// It is a fast, white-box test of the POST-CALLBACK pipeline (callback contract → bind → classify → QA
+// → dispatch). The real end-to-end DoD drives a genuine upload through the containers:
+// e2e/composed-dod.composed.e2e.ts. Simulating the inference leg here for years is exactly what hid the
+// missing trigger — so this test no longer claims to be end-to-end.
+describe("post-callback pipeline — callback contract → bind → classify → QA → dispatch (in-process)", () => {
+  it("callback → bind → classify → approve → fan-out dispatch → audit (starts at the callback, not a real upload)", () =>
     // RLS org context for all direct-Prisma steps; the callback + worker set their own (M1-02).
     runWithOrg(ORG, async () => {
     // 1) INGEST — capture-time airframe binding (M0-04, CR-11). Fail closed on unverified.

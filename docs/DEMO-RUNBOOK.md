@@ -4,8 +4,10 @@ Reproduces the full **Definition of Done** locally: seed → ingest → inferenc
 classify → 100% QA approve → fan-out dispatch (generic webhook + Jira) → audit provenance. Every
 external HTTP target is mocked, so this runs with **no live Jira/webhook** and no cloud.
 
-> The automated version of this exact path is `apps/web/e2e/dod.e2e.ts` (run in CI against Postgres +
-> Redis service containers). This runbook is the human walkthrough.
+> The real end-to-end DoD is `apps/web/e2e/composed-dod.composed.e2e.ts` — it drives a genuine upload
+> through the composed containers in CI (the `images` job). The fast in-process
+> `apps/web/e2e/post-callback-pipeline.e2e.ts` covers the post-callback pipeline (bind → classify → QA
+> → dispatch) against Postgres + Redis. This runbook is the human walkthrough.
 
 ## Prerequisites
 - Node 20, pnpm (via `corepack enable`), and (for the inference service) `uv`.
