@@ -172,6 +172,14 @@ enum CaptureModality {
   STATIONARY_IOT_SENSOR
 }
 
+// M2-7/CR-36 — per-session inference orchestration state (upload → queue → worker → inference).
+enum ProcessingStatus {
+  PENDING // enqueued on upload, awaiting the inference worker
+  PROCESSING // the worker is calling the inference service
+  COMPLETE // inference ran and posted its callback
+  FAILED // exhausted retries — fail closed + surfaced to the operator, never silently dropped
+}
+
 enum CalibrationStatus {
   CALIBRATED
   CALIBRATED_BY_SCADA_LOAD
@@ -188,6 +196,11 @@ model IngestionSession {
 
   isValidated Boolean @default(false) // set by Infield Validator (CR-11 quality firewall)
   calibrationStatus CalibrationStatus? // M2-2b/CR-29: session inspection-condition gate (flag not block; null = not evaluated)
+
+  // M2-7/CR-36 — ingestion→inference orchestration. Upload enqueues a `session-inference` job and sets
+  // PENDING; the worker sets PROCESSING → COMPLETE, or FAILED (exhausted retries, surfaced to the
+  // operator). null = pre-orchestration session (not tracked). A capture must NEVER vanish into the queue.
+  processingStatus ProcessingStatus?
 
   // --- NDAA: platform enforces via verified airframe registry, NOT in-browser detection (CR-11) ---
   isNdaaVerified  Boolean        @default(false) // default FALSE until bound to a verified airframe

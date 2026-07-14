@@ -5,6 +5,7 @@ import { storage } from "@dz/storage";
 import { bindAirframe } from "@/lib/ingestion/airframe-binding";
 import { evaluateEnvironment } from "@/lib/field/environment";
 import { captureQualityReason } from "@/lib/quality/reason";
+import { enqueueSessionInference } from "@/lib/ingestion/inference-queue";
 import exifr from "exifr";
 import { getSession } from "@/lib/session";
 
@@ -164,6 +165,7 @@ export async function POST(req: NextRequest) {
         // Mirrors the verified airframe — never hardcoded; only verified captures reach here (CR-11).
         isNdaaVerified: binding.isNdaaVerified,
         calibrationStatus, // M2-2b/CR-29 (null when no telemetry — not evaluated)
+        processingStatus: "PENDING", // M2-7/CR-36 — enqueued for inference just below
         mediaAssets: {
           create: {
             fullStoragePath: stored.storagePath,
@@ -173,6 +175,11 @@ export async function POST(req: NextRequest) {
       },
       include: { mediaAssets: { select: { id: true } } },
     });
+
+    // M2-7/CR-36 — TRIGGER inference. Enqueue AFTER the session is committed; the upload returns
+    // immediately (non-blocking) and the worker picks it up. This is the hop that was missing — before
+    // it, an uploaded capture sat forever with nothing calling the inference service.
+    await enqueueSessionInference(session.id, organizationId);
 
     return NextResponse.json(
       {
