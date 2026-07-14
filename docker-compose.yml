@@ -144,6 +144,9 @@ services:
       DATABASE_URL: postgresql://datumzero_app:dz_app_local_dev@postgres:5432/datum_zero
       DIRECT_DATABASE_URL: postgresql://dz:dz_local_dev@postgres:5432/datum_zero
       REDIS_URL: redis://redis:6379
+      # The inference worker HTTP-calls the inference service by container DNS (M2-7c) — without this it
+      # defaults to localhost:8000 (nothing in this container) and every capture fails closed.
+      INFERENCE_BASE_URL: http://inference:8000
     restart: unless-stopped
 
   inference:
