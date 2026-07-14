@@ -11,15 +11,20 @@ codebase is built to hold. These assert the ones that would fail SILENTLY in pro
   • the data tier is not reachable from the internet, and is encrypted at rest + in transit;
   • Redis keeps `noeviction` — any other policy lets BullMQ silently DROP queued inference jobs, so
     an upload would be accepted and never processed (fail-open — the one thing we never allow);
-  • state and tfvars can never be committed.
+  • state and tfvars can never be committed;
+  • CI stays AUTHOR-ONLY — it never plans or applies, and carries no AWS credentials. Applying
+    provisions paid infrastructure and is the user's action, not a side effect of a push.
 
 Run: pytest tests/guardrails -q
 """
 import re
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 TF_DIR = ROOT / "terraform"
+CI = ROOT / ".github/workflows/ci.yml"
 SECRETS_TF = TF_DIR / "modules/secrets/main.tf"
 RDS_TF = TF_DIR / "modules/rds/main.tf"
 REDIS_TF = TF_DIR / "modules/redis/main.tf"
@@ -214,4 +219,54 @@ def test_gitignore_excludes_state_and_tfvars_but_keeps_the_lock():
     assert "**/.terraform/" in ig, "the provider cache must not be committed"
     assert not re.search(r"^\s*\*?\.terraform\.lock\.hcl", ig, re.M), (
         "the lock file MUST stay committed — it is what pins provider versions deterministically"
+    )
+
+
+# --- CI is author-only ---
+
+
+def infra_job() -> dict:
+    job = yaml.safe_load(CI.read_text())["jobs"].get("infra")
+    assert job, "ci.yml must define the `infra` Terraform lint job"
+    return job
+
+
+def test_ci_never_plans_or_applies():
+    """
+    A push must never be able to provision, mutate, or destroy real infrastructure. Applying costs
+    money and is the user's decision — CI's job is to prove the config is well-formed, nothing more.
+    """
+    steps = yaml.dump(infra_job())
+    for forbidden in ("terraform apply", "terraform plan", "terraform destroy", "terraform import"):
+        assert forbidden not in steps, (
+            f"the infra job must never run `{forbidden}` — CI is author-only (M2-6c/CR-37)"
+        )
+
+
+def test_ci_infra_job_has_no_aws_credentials():
+    """
+    `init -backend=false` is what makes author-only structural: with no backend there is nothing to
+    authenticate to, so the job cannot reach AWS even if it tried.
+    """
+    job = infra_job()
+    blob = yaml.dump(job)
+    assert "-backend=false" in blob, (
+        "the infra job must init with -backend=false — otherwise it needs state access, and "
+        "therefore credentials"
+    )
+    for creds in (
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "aws-actions/configure-aws-credentials",
+        "role-to-assume",
+    ):
+        assert creds not in blob, f"the infra job must carry no AWS credentials — found {creds!r}"
+
+
+def test_ci_infra_job_checks_formatting_and_validates_every_config():
+    blob = yaml.dump(infra_job())
+    assert "terraform fmt -check" in blob, "the infra job must enforce canonical formatting"
+    assert blob.count("terraform validate") >= 2, (
+        "every committed config must validate — envs/prod AND bootstrap"
     )

@@ -234,3 +234,32 @@ jobs:
       - name: Compose down
         if: always()
         run: docker compose down -v
+
+  # M2-6c / CR-37 — Terraform is AUTHOR-ONLY in CI. This job lints and type-checks the config; it
+  # NEVER runs `plan` or `apply`, configures no AWS credentials, and touches no state. `init
+  # -backend=false` is what makes that structural rather than a promise: it skips the S3 backend
+  # entirely, so there is nothing for the job to authenticate to. Applying is the user's action
+  # (real money, real resources) — see docs/DEPLOY.md.
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Canonical formatting (all configs)
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Validate — envs/prod
+        working-directory: terraform/envs/prod
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate -no-color
+
+      - name: Validate — bootstrap (state backend, run once by hand)
+        working-directory: terraform/bootstrap
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate -no-color
