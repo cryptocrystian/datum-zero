@@ -178,8 +178,9 @@ export async function POST(req: NextRequest) {
 
     // M2-7/CR-36 — TRIGGER inference. Enqueue AFTER the session is committed; the upload returns
     // immediately (non-blocking) and the worker picks it up. This is the hop that was missing — before
-    // it, an uploaded capture sat forever with nothing calling the inference service.
-    await enqueueSessionInference(session.id, organizationId);
+    // it, an uploaded capture sat forever with nothing calling the inference service. The capture's
+    // own EXIF GPS rides along so inference binds to the right asset (M2-7c), not the SAMPLE fallback.
+    await enqueueSessionInference(session.id, organizationId, { latitude: exLat ?? null, longitude: exLon ?? null });
 
     return NextResponse.json(
       {

@@ -24,9 +24,15 @@ export function getInferenceQueue(): Queue {
  * backoff, then fails closed to FAILED (surfaced). organizationId rides in the job data so the worker
  * binds the RLS org context (runWithOrg) BEFORE it reads the tenant-scoped session (M1-02, CR-20).
  */
+export interface CaptureCoords {
+  latitude: number | null;
+  longitude: number | null;
+}
+
 export async function enqueueSessionInference(
   ingestionSessionId: string,
   organizationId: string,
+  coords?: CaptureCoords,
 ): Promise<void> {
   // Retry policy is env-configurable (an ops knob; tests set it low to fail fast). Defaults: 5
   // attempts, 2s exponential backoff — rides out a transient inference blip, bounded so a genuinely
@@ -36,7 +42,9 @@ export async function enqueueSessionInference(
   const backoffMs = Number(process.env.INFERENCE_BACKOFF_MS ?? 2000);
   await getInferenceQueue().add(
     "process",
-    { ingestionSessionId, organizationId },
+    // The capture's own GPS (from EXIF at upload) rides in the job so inference binds to the RIGHT
+    // asset (M2-7c) — not the SAMPLE fallback. null when absent (inference falls back).
+    { ingestionSessionId, organizationId, latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null },
     {
       jobId: ingestionSessionId,
       attempts,

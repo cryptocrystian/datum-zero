@@ -100,6 +100,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       # Runtime connects as the NON-SUPERUSER role (RLS enforced); DIRECT is used only by migrate.
@@ -151,8 +153,8 @@ services:
       dockerfile: services/inference/Dockerfile
     container_name: dz-inference
     depends_on:
-      minio:
-        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     environment:
       INFERENCE_CALLBACK_URL: http://web:3000/api/v1/inference/callback
       INFERENCE_CALLBACK_TOKEN: local_dev_callback_token
@@ -170,6 +172,17 @@ services:
     #   - ${DJI_THERMAL_SDK_HOST_PATH:?set to your private DJI SDK path}:/opt/dji-thermal-sdk:ro
     ports:
       - "8000:8000"
+    restart: unless-stopped
+
+  # Webhook sink for the real-trigger DoD (M2-7c) — a 200-returning HTTP recorder the containerized
+  # outbox worker delivers to (proving worker→external through container DNS). CI-only (profile `ci`);
+  # not part of the on-prem artifact. The delivered payload is validated from Postgres in the e2e.
+  sink:
+    image: mendhak/http-https-echo:31
+    container_name: dz-sink
+    profiles: ["ci"]
+    environment:
+      HTTP_PORT: "8080"
     restart: unless-stopped
 
 volumes:

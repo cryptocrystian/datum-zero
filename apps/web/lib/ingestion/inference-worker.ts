@@ -23,10 +23,12 @@ function inferenceBaseUrl(): string {
 interface JobData {
   ingestionSessionId: string;
   organizationId: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 async function processSession(job: Job): Promise<void> {
-  const { ingestionSessionId, organizationId } = job.data as JobData;
+  const { ingestionSessionId, organizationId, latitude, longitude } = job.data as JobData;
   return runWithOrg(organizationId, async () => {
     const session = await prisma.ingestionSession.findFirst({
       where: { id: ingestionSessionId, organizationId },
@@ -52,6 +54,9 @@ async function processSession(job: Job): Promise<void> {
       organization_id: organizationId,
       raw_storage_path: session.rawStoragePath,
       captured_at: capturedAt ? capturedAt.toISOString() : null,
+      // The capture's own GPS → inference binds to the right asset (M2-7c), not the SAMPLE fallback.
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
     });
 
     try {

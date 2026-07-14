@@ -14,6 +14,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["e2e/**/*.e2e.ts"],
+    // Composed-stack tests (M2-7c) run only against `docker compose` in CI (vitest.composed.config.ts),
+    // never in the host/service-container e2e job.
+    exclude: ["**/node_modules/**", "**/*.composed.e2e.ts"],
     testTimeout: 45_000,
     hookTimeout: 45_000,
     fileParallelism: false,

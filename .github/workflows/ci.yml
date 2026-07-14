@@ -218,15 +218,16 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Prisma generate (for the host-run DoD e2e)
         run: pnpm --filter @dz/db exec prisma generate
-      - name: Compose up the parity stack (reuses the images built above; --wait on healthchecks)
-        # --wait only on the long-running services: the one-shot migrate + minio-init EXIT (0), and
-        # `up --wait` treats an exited service as a wait failure. migrate still runs (web/workers gate
-        # on `service_completed_successfully`), so this waits for a fully-migrated, healthy stack.
-        run: docker compose up -d --wait web workers inference
-      - name: Stop the container worker (the in-process DoD worker owns the BullMQ queue)
-        run: docker compose stop workers
-      - name: DoD e2e against the composed stack
-        run: pnpm --filter @dz/web test:e2e
+      - name: Compose up the parity stack + webhook sink (workers RUNNING — no in-process worker)
+        # --wait only on the long-running services (the one-shot migrate + minio-init EXIT 0, which
+        # `up --wait` treats as a failure; they still run as web/inference dependencies). The workers
+        # container OWNS both queues — the real-trigger DoD drives everything black-box through it.
+        run: docker compose --profile ci up -d --wait web workers inference sink
+      - name: Real-trigger DoD against the composed stack (no simulation, no in-process worker)
+        env:
+          COMPOSED_WEB_URL: http://localhost:3000
+          INGEST_API_TOKEN: local_dev_ingest_token
+        run: pnpm --filter @dz/web test:e2e:composed
       - name: Compose logs (on failure)
         if: failure()
         run: docker compose logs --no-color --tail 200

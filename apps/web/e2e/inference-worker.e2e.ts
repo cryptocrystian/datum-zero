@@ -40,6 +40,7 @@ let inferSrv: http.Server;
 let worker: Worker;
 let inferMode: "ok" | "fail" = "ok";
 let callCount = 0;
+let lastBody: Record<string, unknown> | null = null;
 const createdSessions: string[] = [];
 
 async function makeSession(): Promise<string> {
@@ -65,13 +66,22 @@ async function statusOf(id: string): Promise<string | null> {
 beforeAll(async () => {
   inferSrv = http.createServer((req, res) => {
     callCount += 1;
-    if (inferMode === "fail") {
-      res.writeHead(500);
-      res.end("inference boom");
-      return;
-    }
-    res.writeHead(202, { "content-type": "application/json" });
-    res.end(JSON.stringify({ accepted: true }));
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      try {
+        lastBody = JSON.parse(raw || "{}");
+      } catch {
+        lastBody = null;
+      }
+      if (inferMode === "fail") {
+        res.writeHead(500);
+        res.end("inference boom");
+        return;
+      }
+      res.writeHead(202, { "content-type": "application/json" });
+      res.end(JSON.stringify({ accepted: true }));
+    });
   });
   await new Promise<void>((r) => inferSrv.listen(0, r));
   const port = (inferSrv.address() as AddressInfo).port;
@@ -93,6 +103,18 @@ describe("session-inference worker (M2-7/CR-36) — queue → worker → inferen
       const id = await makeSession();
       await enqueueSessionInference(id, ORG);
       expect(await poll(async () => (await statusOf(id)) === "COMPLETE")).toBe(true);
+    });
+  });
+
+  it("forwards the capture's GPS to inference (so it binds to the right asset, not the fallback)", async () => {
+    await runWithOrg(ORG, async () => {
+      inferMode = "ok";
+      const id = await makeSession();
+      await enqueueSessionInference(id, ORG, { latitude: 32.222690, longitude: -110.974590 });
+      expect(await poll(async () => (await statusOf(id)) === "COMPLETE")).toBe(true);
+      expect(lastBody?.latitude).toBe(32.222690);
+      expect(lastBody?.longitude).toBe(-110.974590);
+      expect(lastBody?.raw_storage_path).toBe("raw/inference-worker-test.tif");
     });
   });
 
