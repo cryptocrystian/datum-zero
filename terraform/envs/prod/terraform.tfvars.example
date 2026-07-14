@@ -1,0 +1,34 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+#
+# NO SECRET VALUES BELONG IN THIS FILE — or in any .tf/.tfvars. Secrets Manager entries are declared
+# empty by Terraform; you inject their values out-of-band with `aws secretsmanager put-secret-value`.
+# See docs/DEPLOY.md.
+
+environment = "prod"
+region      = "us-east-1"
+azs         = ["us-east-1a", "us-east-1b"]
+
+# Must be globally unique across all of S3. Required — there is no default.
+media_bucket_name = "datum-zero-prod-media-CHANGEME"
+
+# Leave empty on the first apply: the ALB hostname does not exist until the ALB does. After apply,
+# set these and re-apply (M2-6f wires the real domain + certificate).
+app_base_url    = ""
+certificate_arn = ""
+
+# The image tag the services run. CI builds these (M2-6b); M2-6d will push + advance the tag.
+image_tag = "latest"
+
+# RLS dual-role (CR-20). These MUST differ — the runtime role is non-superuser and therefore
+# RLS-subject; the master role is used ONLY by `prisma migrate deploy` via Prisma's directUrl.
+# Setting them equal fails validation at plan time.
+db_master_username = "datumzero_migrator"
+db_app_username    = "datumzero_app"
+
+# Cheapest sane pre-customer footprint. Raise db_multi_az to true before real tenant data lands.
+db_instance_class = "db.t4g.micro"
+db_multi_az       = false
+redis_node_type   = "cache.t4g.micro"
+
+# Set once the SES domain identity is verified (M2-6f). Empty = no ses:SendEmail grant is attached.
+ses_sending_identity_arn = ""
