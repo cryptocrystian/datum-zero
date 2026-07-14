@@ -24,27 +24,36 @@ for (const file of [".env.local", ".env"]) {
   }
 }
 
-// Fail closed (M2-6a, CR-35): refuse to start if the runtime DB role is a superuser — a collapsed
-// dual-role would silently disable RLS tenant isolation. Migrations run separately via directUrl.
-await assertRuntimeRoleNotSuperuser();
+// Wrapped in an async main() (NOT top-level await): tsx transforms this entry to CJS in the workers
+// container, where top-level await is unsupported (M2-7c container fix).
+async function main() {
+  // Fail closed (M2-6a, CR-35): refuse to start if the runtime DB role is a superuser — a collapsed
+  // dual-role would silently disable RLS tenant isolation. Migrations run separately via directUrl.
+  await assertRuntimeRoleNotSuperuser();
 
-const worker = startWorker();
-// eslint-disable-next-line no-console
-console.log("[outbox] work-order delivery worker started");
-
-worker.on("failed", (job, err) => {
+  const worker = startWorker();
   // eslint-disable-next-line no-console
-  console.error(`[outbox] job ${job?.id} failed: ${err.message}`);
-});
+  console.log("[outbox] work-order delivery worker started");
+  worker.on("failed", (job, err) => {
+    // eslint-disable-next-line no-console
+    console.error(`[outbox] job ${job?.id} failed: ${err.message}`);
+  });
 
-// M2-7/CR-36 — the ingestion→inference worker runs in the same process (the workers container).
-const inferenceWorker = startInferenceWorker();
-// eslint-disable-next-line no-console
-console.log("[inference] session-inference worker started");
+  // M2-7/CR-36 — the ingestion→inference worker runs in the same process (the workers container).
+  const inferenceWorker = startInferenceWorker();
+  // eslint-disable-next-line no-console
+  console.log("[inference] session-inference worker started");
 
-async function shutdown() {
-  await Promise.all([worker.close(), inferenceWorker.close()]);
-  process.exit(0);
+  async function shutdown() {
+    await Promise.all([worker.close(), inferenceWorker.close()]);
+    process.exit(0);
+  }
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+
+main().catch((err) => {
+  // eslint-disable-next-line no-console
+  console.error("[worker] fatal:", err);
+  process.exit(1);
+});

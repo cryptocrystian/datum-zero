@@ -10,6 +10,9 @@ FROM node:${NODE_VERSION} AS deps
 # runtime user without corepack trying to download it into a (non-writable) $HOME at container start.
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH COREPACK_HOME=/opt/corepack
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate && chmod -R a+rX /opt/corepack
+# openssl (libssl) so Prisma detects OpenSSL 3 + generates/loads the debian-openssl-3.0.x query engine
+# in the build (→ workers, which is FROM build). Without it Prisma defaults to the absent 1.1.x engine.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
@@ -29,7 +32,9 @@ RUN pnpm --filter @dz/web build
 FROM node:${NODE_VERSION} AS web
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
 WORKDIR /app
-RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
+# openssl so the traced Prisma query engine (debian-openssl-3.0.x) loads at runtime (M2-7c).
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
 # Standalone traces its own node_modules + the @dz/* workspace packages; no dev deps, no secrets.
 COPY --from=build --chown=nextjs:nodejs /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /repo/apps/web/.next/static ./apps/web/.next/static

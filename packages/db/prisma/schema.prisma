@@ -18,6 +18,10 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  // `native` for the local dev loop; `debian-openssl-3.0.x` for the containers (node:22-bookworm-slim,
+  // OpenSSL 3) so the query engine is present in the image — otherwise Prisma defaults to the absent
+  // openssl-1.1.x engine and every query throws (M2-7c container fix).
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 // ============================================================================
