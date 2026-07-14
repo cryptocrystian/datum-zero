@@ -44,6 +44,7 @@ const RULESET_ID = "00000000-0000-0000-0000-000000000003";
 const WEBHOOK_ID = "00000000-0000-0000-0000-000000000004";
 const JIRA_ID = "00000000-0000-0000-0000-000000000005";
 const PILOT_ID = "00000000-0000-0000-0000-000000000006";
+const PILOT_INSURANCE_ID = "00000000-0000-0000-0000-0000000000b0";
 const HW_VERIFIED_ID = "00000000-0000-0000-0000-000000000007";
 const HW_UNVERIFIED_ID = "00000000-0000-0000-0000-000000000008";
 
@@ -206,6 +207,31 @@ async function main() {
       sensorType: CaptureModality.DRONE_THERMAL,
       serialNumber: UNVERIFIED_AIRFRAME_SERIAL,
       ndaaVerified: false,
+    },
+  });
+
+  // Verified proof-of-coverage (M2-4a/CR-33) that SATISFIES the seeded ClientContract profile ($5M,
+  // dedicated aviation + AI + P&NC + waiver) so the coverage gate + insurance surfaces have real
+  // content. We VERIFY; we never bind/collect/resell (CR-03).
+  await prisma.pilotInsurance.upsert({
+    where: { id: PILOT_INSURANCE_ID },
+    update: {},
+    create: {
+      id: PILOT_INSURANCE_ID,
+      pilotId: pilot.id,
+      kind: "BYO_ANNUAL",
+      providerName: "SkyGuard Aviation (demo)",
+      policyNumber: "DZ-DEMO-AV-0001",
+      liabilityLimit: "5000000.00",
+      isDedicatedAviation: true,
+      hasBlanketAI: true,
+      hasPrimaryNonContrib: true,
+      hasWaiverOfSubrogation: true,
+      isVerified: true,
+      verificationSource: "MANUAL_QA",
+      verifiedAt: new Date("2026-01-20T00:00:00Z"),
+      coverageStart: new Date("2026-01-01T00:00:00Z"),
+      coverageEnd: new Date("2027-12-31T00:00:00Z"),
     },
   });
 
