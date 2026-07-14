@@ -27,6 +27,9 @@ WORKDIR /repo
 COPY . .
 RUN pnpm --filter @dz/db exec prisma generate
 RUN pnpm --filter @dz/web build
+# Next's standalone file-tracing does not copy the Prisma query-engine .node binary in a pnpm monorepo,
+# so stage it at a fixed path for the web runtime to load explicitly (M2-7c).
+RUN cp "$(find /repo/node_modules -name 'libquery_engine-debian-openssl-3.0.x.so.node' | head -1)" /repo/query-engine.so.node
 
 # ---- web: minimal standalone runtime, non-root ----
 FROM node:${NODE_VERSION} AS web
@@ -39,6 +42,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY --from=build --chown=nextjs:nodejs /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=nextjs:nodejs /repo/apps/web/public ./apps/web/public
+# The Prisma query engine (missed by Next's standalone tracing) — pointed at explicitly (M2-7c).
+COPY --from=build --chown=nextjs:nodejs /repo/query-engine.so.node /app/query-engine.so.node
+ENV PRISMA_QUERY_ENGINE_LIBRARY=/app/query-engine.so.node
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=25s --retries=3 \
