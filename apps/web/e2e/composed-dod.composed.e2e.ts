@@ -103,11 +103,18 @@ describe("real-trigger DoD against the composed stack (M2-7c, CR-36, CR-35)", ()
     expect(anomaly!.classification).not.toMatch(VERDICT);
     expect(anomaly!.status).toBe("PENDING_QA");
 
-    // Session reached a terminal COMPLETE (the trigger ran through the containers).
-    const session = await runWithOrg(ORG, () =>
-      prisma.ingestionSession.findFirst({ where: { id: ingestionSessionId }, select: { processingStatus: true } }),
+    // Session reaches the terminal COMPLETE (the worker sets it just after the callback lands, and a
+    // container restart can delay it) — poll for eventual consistency.
+    const completed = await runWithOrg(ORG, () =>
+      poll(async () => {
+        const s = await prisma.ingestionSession.findFirst({
+          where: { id: ingestionSessionId, organizationId: ORG },
+          select: { processingStatus: true },
+        });
+        return s?.processingStatus === "COMPLETE" ? s : null;
+      }, 30_000),
     );
-    expect(session?.processingStatus).toBe("COMPLETE");
+    expect(completed?.processingStatus, "session did not reach COMPLETE").toBe("COMPLETE");
 
     // 6) Point the webhook integration at the sink container + retire the un-mockable Jira target, then
     //    approve (100% QA gate). Delivery fans out through the CONTAINERIZED outbox worker.
