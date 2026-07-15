@@ -10,12 +10,36 @@ Industrial dark mode. "Structural precision, mathematical ground truth, defense-
 cadmium-gold used *sparingly* for emphasis only, monospace for all data, uppercase tracked labels,
 sharp/minimal radii, bracketed `[ ACTION ]` motif for primary controls, subtle blueprint-grid texture.
 
+## Elevation (M3-1, CR-38)
+Four planes. **The canvas is the darkest surface; cards lift off it; fields are punched back down
+into the card.** Every cockpit surface composes from `<Panel>/<Card>/<Field>`
+(`apps/web/components/ui/elevation.tsx`) — do not hand-roll `bg-datum-cardbg border …` per page.
+
+| Plane | Token | Hex | Role |
+|---|---|---|---|
+| 1 · canvas | `datum-midnight` | `#121926` | content stage — the darkest plane |
+| 2 · panel | `datum-panel` | `#151926` | secondary/subdued surface |
+| 3 · card | `datum-cardbg` | `#1A253A` | **lifted** — always with a 1px border + uppercase header bar |
+| 4 · inset | `datum-darknavy` | `#121926` | field box inside a card; also the sidebar rail |
+
+The ramp is deliberately narrow (≈1.15:1 canvas→card) — this is industrial dark mode, not a shadowed
+material stack. **The 1px border does the defining work**, which is why `<Card>` always carries one.
+
+> **History — the inversion.** Through M2 these hexes were assigned backwards: the canvas was
+> `#1A253A` (the *lightest* surface) and cards were `#151926`, i.e. **darker than the stage they sat
+> on**. Cards receded instead of lifting, at 1.14:1 against the canvas and 1.01:1 against the sidebar
+> (1.00 = invisible). That — not a missing component pass — is what read as "flat". **No Brand Guide
+> hex changed in the fix; only which surface each one paints.** `tests/guardrails/test_elevation.py`
+> now parses these values and asserts the ordering by computed luminance, so it cannot silently
+> invert again.
+
 ## Color tokens
 | Token | Hex | Use |
 |---|---|---|
-| `datum-midnight` | `#1A253A` | content stage / global canvas |
-| `datum-darknavy` | `#121926` | sidebar rail, disabled input bg |
-| `datum-cardbg` | `#151926` | content cards / elevated panels |
+| `datum-midnight` | `#121926` | content stage / global canvas (plane 1 — darkest) |
+| `datum-panel` | `#151926` | secondary surface (plane 2) |
+| `datum-cardbg` | `#1A253A` | content cards / elevated panels (plane 3 — lifted) |
+| `datum-darknavy` | `#121926` | inset field box, sidebar rail, disabled input bg (plane 4) |
 | `datum-slate` | `#6D7278` | borders, crosshairs, idle states, secondary text |
 | `datum-charcoal` | `#2E2E2E` | deep dividers |
 | `tactical-gold` | `#E9D700` | high-level emphasis, active focal markers, calculated anomalies |
@@ -28,9 +52,11 @@ sharp/minimal radii, bracketed `[ ACTION ]` motif for primary controls, subtle b
 @import "tailwindcss";
 
 @theme {
-  --color-datum-midnight: #1A253A;
-  --color-datum-darknavy: #121926;
-  --color-datum-cardbg:   #151926;
+  /* Elevation ramp — canvas is DARKEST, card is LIFTED. See §Elevation before changing these. */
+  --color-datum-midnight: #121926; /* 1. canvas */
+  --color-datum-panel:    #151926; /* 2. panel  */
+  --color-datum-cardbg:   #1A253A; /* 3. card (lifted) */
+  --color-datum-darknavy: #121926; /* 4. inset field / sidebar rail */
   --color-datum-slate:    #6D7278;
   --color-datum-charcoal: #2E2E2E;
   --color-tactical-gold:      #E9D700;
@@ -64,8 +90,10 @@ Type scale: H1 24/32 · H2 16/24 · H3 (label) 12/16 (uppercase) · mono coords 
   dispatch/reject action group).
 
 ## Component patterns
-- **Cards:** `bg-datum-cardbg`, `border-datum-slate`, small radius, uppercase slate section labels.
-- **Data fields:** disabled inputs — `bg-datum-darknavy border-datum-slate text-white`.
+- **Cards:** use `<Card title="…">` — `bg-datum-cardbg` (lifted), 1px `border-datum-slate/30`, small
+  radius, uppercase header bar. Do not hand-roll; see §Elevation.
+- **Data fields:** use `<Field label="…">` — an inset box, `bg-datum-darknavy border-datum-slate/30`,
+  mono value, uppercase slate micro-label.
 - **Primary / dispatch button:** `bg-datum-midnight hover:bg-tactical-gold text-white border border-tactical-gold transition-colors duration-150`, bracketed label `[ DISPATCH TICKET ]`.
 - **Destructive / reject:** `bg-transparent hover:bg-tactical-red text-tactical-red hover:text-white border border-tactical-red`, `[ REJECT ]`.
 - Build interactive primitives on **Radix UI**; maps on **Mapbox GL JS** (dark vector style).

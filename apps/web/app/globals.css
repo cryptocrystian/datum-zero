@@ -2,9 +2,16 @@
 
 /* Datum Zero — industrial dark mode (docs/DESIGN-SYSTEM.md). Tokens via Tailwind v4 @theme. */
 @theme {
-  --color-datum-midnight: #1a253a; /* content stage / global canvas */
-  --color-datum-darknavy: #121926; /* sidebar rail, disabled input bg */
-  --color-datum-cardbg: #151926; /* content cards / elevated panels */
+  /* --- Elevation ramp (M3-1, CR-38) — darkest canvas, lifted cards, insets punched back down.
+     The Brand Guide hexes are UNCHANGED; M3-1 corrected which surface each one paints. They were
+     inverted: the canvas was the LIGHTEST surface (#1A253A) and cards were darker than the stage
+     they sat on (1.14:1), so every card receded instead of lifting. That inversion — not a missing
+     component pass — is what read as "flat". Ordering is guardrail-enforced by luminance, so it
+     cannot silently invert again. --- */
+  --color-datum-midnight: #121926; /* 1. canvas — content stage, the DARKEST plane */
+  --color-datum-panel: #151926; /* 2. panel — secondary/subdued surface between canvas and card */
+  --color-datum-cardbg: #1a253a; /* 3. card — LIFTED; always paired with a 1px border */
+  --color-datum-darknavy: #121926; /* 4. inset — field box inside a card; also the sidebar rail */
   --color-datum-slate: #6d7278; /* borders, crosshairs, idle, secondary text */
   --color-datum-charcoal: #2e2e2e; /* deep dividers */
 
