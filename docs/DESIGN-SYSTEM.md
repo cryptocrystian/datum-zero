@@ -1,138 +1,161 @@
-# Datum Zero — Design System (canonical)
+# Datum Zero — Design System (canonical, tiered)
 
-Source: **Datum Zero Brand Guide v1.0.0** + the two validated hi-fi mockups. This is the single
-reference for all UI. The `datum-zero-design` skill enforces it; `CLAUDE.md` points here for any
-frontend work. Target stack: **Next.js 15 + Tailwind CSS v4 + Radix UI + Mapbox GL JS**.
+**v2.0.0 · one brand, two settings.** This is the single design authority for all surfaces.
 
-## Aesthetic north star
-Industrial dark mode. "Structural precision, mathematical ground truth, defense-grade data security."
-**Explicitly rejects** consumer-SaaS pastels and white-on-white. Dark institutional navy canvas, muted
-cadmium-gold used *sparingly* for emphasis only, monospace for all data, uppercase tracked labels,
-sharp/minimal radii, bracketed `[ ACTION ]` motif for primary controls, subtle blueprint-grid texture.
+> **Supersedes:**
+> - the **monolithic gold spec** (v1.x) — it applied one surface's rules globally, which is what
+>   fractured the system: the cockpit inherited marketing-weight gold it should never have had.
+> - the **"Cyber Cyan" 1.2.0-unified** doc (`#00F0FF`, glassmorphism, Cosmic Void `#060913`) —
+>   reviewed and **disregarded**. No cyan, no glassmorphism, no neon glow anywhere.
+>
+> Structure: **`brand.*`** (shared DNA) → **`app.*`** (Tactical HUD) + **`marketing.*`** (Enterprise).
+> A rule lives at the highest tier that is true for every surface below it. When `app` and `marketing`
+> disagree, that is by design — they are two settings of one brand, not two brands.
 
-## Elevation (M3-1, CR-38)
-Four planes. **The canvas is the darkest surface; cards lift off it; fields are punched back down
-into the card.** Every cockpit surface composes from `<Panel>/<Card>/<Field>`
-(`apps/web/components/ui/elevation.tsx`) — do not hand-roll `bg-datum-cardbg border …` per page.
-
-| Plane | Token | Hex | Role |
-|---|---|---|---|
-| 1 · canvas | `datum-midnight` | `#121926` | content stage — the darkest plane |
-| 2 · panel | `datum-panel` | `#151926` | secondary/subdued surface |
-| 3 · card | `datum-cardbg` | `#1A253A` | **lifted** — always with a 1px border + uppercase header bar |
-| 4 · inset | `datum-darknavy` | `#121926` | field box inside a card; also the sidebar rail |
-
-The ramp is deliberately narrow (≈1.15:1 canvas→card) — this is industrial dark mode, not a shadowed
-material stack. **The 1px border does the defining work**, which is why `<Card>` always carries one.
-
-> **History — the inversion.** Through M2 these hexes were assigned backwards: the canvas was
-> `#1A253A` (the *lightest* surface) and cards were `#151926`, i.e. **darker than the stage they sat
-> on**. Cards receded instead of lifting, at 1.14:1 against the canvas and 1.01:1 against the sidebar
-> (1.00 = invisible). That — not a missing component pass — is what read as "flat". **No Brand Guide
-> hex changed in the fix; only which surface each one paints.** `tests/guardrails/test_elevation.py`
-> now parses these values and asserts the ordering by computed luminance, so it cannot silently
-> invert again.
-
-## Color tokens
-| Token | Hex | Use |
-|---|---|---|
-| `datum-midnight` | `#121926` | content stage / global canvas (plane 1 — darkest) |
-| `datum-panel` | `#151926` | secondary surface (plane 2) |
-| `datum-cardbg` | `#1A253A` | content cards / elevated panels (plane 3 — lifted) |
-| `datum-darknavy` | `#121926` | inset field box, sidebar rail, disabled input bg (plane 4) |
-| `datum-slate` | `#6D7278` | borders, crosshairs, idle states, secondary text |
-| `datum-charcoal` | `#2E2E2E` | deep dividers |
-| `tactical-gold` | `#E9D700` | high-level emphasis, active focal markers, calculated anomalies |
-| `tactical-goldmuted` | `#C49F30` | secondary gold / hover |
-| `tactical-red` | `#8A2424` | rejected logs, out-of-spec variances, critical failures |
-| status green | (OK indicator) | `System Status: OK`, node-activity toggle — success only |
-
-### Tailwind v4 tokens — paste into `apps/web/app/globals.css`
-```css
-@import "tailwindcss";
-
-@theme {
-  /* Elevation ramp — canvas is DARKEST, card is LIFTED. See §Elevation before changing these. */
-  --color-datum-midnight: #121926; /* 1. canvas */
-  --color-datum-panel:    #151926; /* 2. panel  */
-  --color-datum-cardbg:   #1A253A; /* 3. card (lifted) */
-  --color-datum-darknavy: #121926; /* 4. inset field / sidebar rail */
-  --color-datum-slate:    #6D7278;
-  --color-datum-charcoal: #2E2E2E;
-  --color-tactical-gold:      #E9D700;
-  --color-tactical-goldmuted: #C49F30;
-  --color-tactical-red:       #8A2424;
-
-  --font-sans: "Vertex Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Datum Mono", "JetBrains Mono", ui-monospace, monospace;
-}
-```
-This yields `bg-datum-midnight`, `text-tactical-gold`, `border-datum-slate`, `font-mono`, etc.
-
-## Typography
-- **Interface — Vertex Sans / Inter:** geometric, high-legibility, wide tracking. Headers are
-  **uppercase, tracking-wide, bold**.
-- **Data — Datum Mono / JetBrains Mono:** tabular, slashed zero. Use for **all** coordinates, IDs,
-  radiometric values, confidences, and JSON payloads.
-- **Practical note:** implement with **Inter** + **JetBrains Mono** (both free) unless licensed Vertex
-  Sans / Datum Mono files are provided — they're the specified fallbacks and are production-ready.
-
-Type scale: H1 24/32 · H2 16/24 · H3 (label) 12/16 (uppercase) · mono coords 14/20 · mono payload 12/18.
-
-## Layout
-- **Sidebar:** 260px fixed, `bg-datum-darknavy`; insignia + routes (`/dashboard`, `/queue`,
-  `/integrations`, …) + a live `System Status: OK` health capsule.
-- **Content stage:** `calc(100vw - 260px)`, `bg-datum-midnight`, `p-6` (24px uniform).
-- **Grid:** strict 12-column flex matrix.
-- **Validation Queue (`/queue`):** Pane A "Reality Viewport" 55% (dual RGB|thermal slider,
-  `cursor-col-resize`, + 240px Mapbox coordinate inset with concentric-ring target); Pane B
-  "Operational Routing Console" 45% (asset param stack in disabled inputs, target-system selector,
-  dispatch/reject action group).
-
-## Component patterns
-- **Cards:** use `<Card title="…">` — `bg-datum-cardbg` (lifted), 1px `border-datum-slate/30`, small
-  radius, uppercase header bar. Do not hand-roll; see §Elevation.
-- **Data fields:** use `<Field label="…">` — an inset box, `bg-datum-darknavy border-datum-slate/30`,
-  mono value, uppercase slate micro-label.
-- **Primary / dispatch button:** `bg-datum-midnight hover:bg-tactical-gold text-white border border-tactical-gold transition-colors duration-150`, bracketed label `[ DISPATCH TICKET ]`.
-- **Destructive / reject:** `bg-transparent hover:bg-tactical-red text-tactical-red hover:text-white border border-tactical-red`, `[ REJECT ]`.
-- Build interactive primitives on **Radix UI**; maps on **Mapbox GL JS** (dark vector style).
-
-## Serialization standards (enforce in UI *and* the work-order payload)
-- **Coordinates:** fixed 6-decimal `±DD.DDDDDD` (e.g. `LAT: 40.712700 | LON: -74.005900`). Matches
-  schema `Decimal(9,6)` and CR-13.
-- **Asset strings (canonical — CR-17):** `[SITE_ID]-[ARRAY_ID]-[ROW_ID]-[STRING_ID]-[NODE_ID]`,
-  e.g. `APEX_SOLAR-GRID_04-ROW_12-STR_08-MOD_14`.
-- **Confidence:** one decimal, `96.8%`. **Thermal variance:** `+ΔT°C … vs. median` (e.g.
-  `+18.4°C delta vs. median`).
-
-## Responsive tiers
-≥1440px full 3-column dashboard · ≤1024px sidebar → icon rail, routing console stacks under viewport ·
-≤640px single-column, full-screen crops, checklist stack.
-
-## Drift guardrails (the anti-AI-sterile rules)
-Dark canvas, never white. Gold is for emphasis **only** — never fill large areas. Mono for every
-number/ID/coordinate. Uppercase, tracked labels. Sharp corners, minimal radius. Bracketed action
-labels. Real product terms — **never** the garbled placeholder text from the mockups.
+**Authorities.** `app.*` is derived from `docs/design/mockups/Dashboard mockup.png`, **sampled
+programmatically** (Pillow, patch-median — never eyeballed). `marketing.*` is derived from
+`docs/design/mockups/website mockup.png`. Enforced by `skills/datum-zero-design/SKILL.md` (kept in
+lockstep with this file) and `tests/guardrails/test_elevation.py`.
 
 ---
 
-## Decisions this introduces (append to `docs/PRD-Corrections-Log.md`)
+## 1 · `brand.*` — the shared DNA
 
-**CR-17 — Canonical asset-label standard ✅**
-Adopt the Brand Guide §5 asset serialization `[SITE_ID]-[ARRAY_ID]-[ROW_ID]-[STRING_ID]-[NODE_ID]`
-(e.g. `APEX_SOLAR-GRID_04-ROW_12-STR_08-MOD_14`) as the canonical `Asset.internalLabel` format. Update
-the seed to emit this pattern. Rationale: one consistent, node-resolvable identity spine across UI,
-payload, and registry (CR-13).
-**SITE_ID vs. tenant:** `SITE_ID` names a *physical site/project* (e.g. `APEX_SOLAR`) and is distinct
-from the tenant/`Organization` — the O&M operator (e.g. "Lighthouse Solar O&M"). One operator manages
-many named sites; the cockpit site selector switches among them. The seed's org name and the asset
-`SITE_ID` are intentionally different, and that is correct.
+True of every surface.
 
-**CR-18 — Marketing copy must honor the product's locked posture 🔎**
-The current marketing mockup contradicts locked decisions and must be corrected before any marketing
-build: (a) replace "Dynamic Liability Binding ($2M Thimble)" with referral/verification framing —
-SkyWatch, variable required limit (CR-01/02/03); (b) remove autonomous-enforcement language
-("we enforce contractual compliance," "instantly pushes") in favor of "surfaces contractual-grade
-evidence for your team to action" — the platform never adjudicates (CR-12). The **cockpit** mockup is
-compliant (Manual QA queue + human Dispatch/Reject); the **marketing** copy is not.
+| Element | Value |
+|---|---|
+| Base family | Deep navy, institutional, dark-mode only. **Never a light canvas.** |
+| **Signature accent** | **Gold `#E9D700`** (`brand-gold`) — carried by the **insignia** and the **marketing site**. |
+| Interface type | **Inter** (Vertex Sans fallback) — uppercase, tracked, bold for headers |
+| Data type | **JetBrains Mono** (Datum Mono fallback), slashed zero, tabular |
+| Texture | Blueprint grid — engineering paper under the content, never noise |
+| Insignia | Zero capsule + reference-datum axis + **gold** benchmark chevron |
+| Geometry | Sharp, structural, minimal radii. No pills, no glassmorphism, no glow. |
+| Voice | **Evidence, not verdict (CR-12).** Measurements + "review recommended". Never `violation`, `breach`, `back-charge`, `penalty`, `liable`, `enforce`. |
+
+### Where gold lives — read this before adding gold
+Gold is the **brand through-line**, carried by the **insignia** (present on every surface) and the
+**marketing site**. It is *not* a general-purpose UI accent.
+
+**The app mockup contains zero gold.** This was verified programmatically, not by eye: a hue/saturation
+scan of `Dashboard mockup.png` outside the photographic regions returns **0 gold pixels**. (An earlier
+scan reported ~600 "gold" hits — those were the *thermal plume* in the radiometric crop, not UI.) The
+app's emphasis is carried by **functional colour**, not brand colour. See §2.
+
+---
+
+## 2 · `app.*` — Tactical HUD (cockpit + field PWA)
+
+Applies to `apps/web/app/(cockpit)/*` and `apps/web/app/field/*`.
+
+The read is a **precision instrument panel**: gray instrument cards on a navy stage, functional
+colour-coding, mono data, high density. **This vibe is inviolable.**
+
+### 2.1 Palette — SAMPLED from `Dashboard mockup.png`
+
+| Token | Hex | Role |
+|---|---|---|
+| `app-canvas` | `#1c2739` | the stage — navy |
+| `app-panel` | `#232a35` | secondary surface between canvas and card |
+| `app-card` | `#2f2e33` | **the instrument card — neutral GRAY, not navy** |
+| `app-card-header` | `#3e454f` | card header band — notably lighter than the card |
+| `app-inset` | `#1b1b1c` | field box — near-black, punched into the card |
+| `app-nav-active` | `#162137` | active sidebar row — navy |
+| `app-action-steel` | `#4f647b` | `[ DISPATCH TICKET ]` fill |
+| `app-line` | `#6d7278` | borders, hairline rules, idle, secondary text |
+
+> **Cards are gray, the canvas is navy.** That contrast — a neutral instrument surface floating on a
+> navy stage — is a large part of the tactical read. Do not "correct" the cards back to navy.
+
+### 2.2 Depth — where it actually comes from
+
+Measured on the mockup:
+
+| Step | Ratio | |
+|---|---|---|
+| canvas → card | **1.115:1** | nearly nothing |
+| card → header band | **1.391:1** | ← |
+| card → inset field | **1.278:1** | ← |
+
+**The depth is the header band + inset boxes INSIDE the card — ~2.5× the canvas→card step.** The fill
+ramp is not the lever.
+
+> **Do not widen canvas→card.** M3-1 shipped a 1.148:1 navy ramp (CR-38) — already *wider* than the
+> mockup — and the cockpit still read flat, because `<Card>`/`<Field>` were wired to nothing. Widening
+> the ramp moves *away* from the mockup. **Wire the components in instead.**
+
+Compose every surface from `apps/web/components/ui/elevation.tsx` — `<Panel>` / `<Card title>` /
+`<Field label value>`. **Never hand-roll `bg-app-card border …` on a page.**
+
+### 2.3 Functional colour — meaning, not decoration
+
+In the app, colour is **operational state**. It is never brand expression.
+
+| Colour | Token | Meaning |
+|---|---|---|
+| Green | `status-green` | nominal · System Status: OK · node activity |
+| Steel blue | `app-action-steel` | the primary action (`[ DISPATCH TICKET ]`) |
+| Red | `tactical-red` | reject · critical |
+| Amber / Orange / Red | `iec-cat1` / `iec-cat2` / `iec-cat3` | IEC TS 62446-3 severity (Cat 1/2/3) |
+
+### 2.4 Gold in the app — focus ring only, A/B toggleable
+
+The app follows its zero-gold mockup. The **single** permitted exception is the **focus/selection
+ring**, behind one token so the decision is a one-line flip:
+
+```css
+--color-app-focus: var(--color-brand-gold); /* B — scarce gold focus accent (current) */
+/* --color-app-focus: var(--color-app-line);   A — neutral ring, zero app gold */
+```
+
+**Forbidden in-app** (this is the rejected option C — it departs from the mockup and breaks the
+tactical read): gold on **nav**, on **ΔT / key metrics**, on the **primary action**, and **any** gold
+fill. The active nav row is navy (`app-nav-active`); ΔT is white mono; the action is steel.
+
+### 2.5 Components
+
+- **Card** — `bg-app-card`, 1px `app-line/30` border, **header bar + hairline rule**, dense body.
+- **Field** — uppercase slate micro-label + **inset box** (`bg-app-inset`), mono value.
+- **Primary action** — bracketed `[ DISPATCH TICKET ]`, steel fill.
+- **Destructive** — `[ REJECT ]`, red outline, transparent fill.
+- **Data** — mono for every coordinate, asset ID, confidence, radiometric value, payload.
+
+### 2.6 Serialization exactness
+Coords `±DD.DDDDDD` (6dp) · asset labels `[SITE]-[ARRAY]-[ROW]-[STRING]-[NODE]` (CR-17) · confidence
+one decimal (`96.8%`) · thermal `+ΔT°C … vs. median`.
+
+### 2.7 Layout
+260px fixed sidebar (insignia · **Overview** · Validation Queue · RuleSet Policy · Integrations · Asset
+Registry · Users · Admin) · top command bar (site selector · System Status · Node Activity) · content
+stage `p-6` · 12-column grid.
+
+> The cockpit nav says **Overview**, never "Dashboard" — it is an admin overview, never the forbidden
+> technician-facing operational dashboard (CR-06).
+
+---
+
+## 3 · `marketing.*` — Enterprise polish (DEFINED, NOT BUILT)
+
+Derived from `website mockup.png`. **Documented here so the tier exists; building is gated on the
+CR-18 content session.** Do not build marketing surfaces from this ticket.
+
+| Element | Direction |
+|---|---|
+| Density | Spacious — generous whitespace, expansive sections (the inverse of `app`) |
+| **Gold** | **Hero accent** — CTAs (`[ REQUEST PAID PROOF OF VALUE ]`), headline metrics, rules |
+| Type | Large bold sans headlines; mono reserved for proof-points and figures |
+| Depth | Gradients over navy permitted (never in `app`) |
+| Voice | Evidence-framed (CR-12) — the mockup's pre-correction copy is **not** the target |
+
+> The website mockup is **pre-correction**: it shows "we enforce contractual compliance", "DYNAMIC
+> LIABILITY BINDING (Thimble)", "FAA Remote ID validation", and Jira-as-target. All are forbidden.
+> See `docs/design/mockups/README.md`.
+
+---
+
+## 4 · Anti-patterns — reject on sight
+White/light canvas · **navy cards** (they are gray) · **gold fills** · gold on nav/ΔT/action · cyan ·
+glassmorphism · neon glow · sans-serif numbers · title-case data labels · pill buttons · verdict
+language · the mockups' garbled placeholder copy taken literally · hand-rolled cards bypassing
+`<Card>`.
