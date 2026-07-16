@@ -1,16 +1,21 @@
 /**
- * M3-1 / CR-38 — the elevation component set (docs/DESIGN-SYSTEM.md §Elevation).
+ * The elevation component set — M3-1/CR-38, retargeted to the sampled app.* palette by M3-1R/CR-40.
+ * See docs/DESIGN-SYSTEM.md §2 (`app.*` — Tactical HUD).
  *
- * Four planes, darkest to lifted:
+ * The planes, sampled from docs/design/mockups/Dashboard mockup.png:
  *
- *   canvas  (datum-midnight)  the content stage — set once by the cockpit layout
- *   panel   (datum-panel)     secondary/subdued surface
- *   card    (datum-cardbg)    LIFTED, always with a 1px border + uppercase header bar
- *   inset   (datum-darknavy)  a field box punched back down INTO a card
+ *   app-canvas       #1c2739  the navy stage — set once by the cockpit layout
+ *   app-panel        #232a35  secondary surface
+ *   app-card         #2f2e33  the instrument card — neutral GRAY, not navy
+ *   app-card-header  #3e454f  the header band — LIGHTER than the card
+ *   app-inset        #1b1b1c  a field box punched back down INTO the card
  *
- * Every surface in the cockpit composes from these three components rather than hand-rolling
- * `bg-datum-cardbg border ...` per page — that is how the elevation stays consistent as pages get
- * rebuilt (M3-2/M3-3). Token-driven only: no hex literal may appear here (guardrail-enforced).
+ * THE DEPTH IS IN HERE, not in the fill ramp. On the mockup, canvas->card is only 1.115:1, while
+ * card->header is 1.391:1 and card->inset is 1.278:1 — the in-card treatment is ~2.5x the ramp.
+ * M3-1 shipped a ramp WIDER than the mockup's and the cockpit still read flat, because these
+ * components were wired to nothing. So: never widen the ramp to chase depth — adopt these.
+ *
+ * Token-driven only: no hex literal may appear here (guardrail-enforced).
  */
 import type { ReactNode } from "react";
 
@@ -24,7 +29,7 @@ function cx(...parts: (string | false | undefined)[]) {
  */
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <section className={cx("rounded-sm border border-datum-slate/20 bg-datum-panel", className)}>
+    <section className={cx("rounded-sm border border-app-line/20 bg-app-panel", className)}>
       {children}
     </section>
   );
@@ -50,14 +55,16 @@ export function Card({
   return (
     <section
       className={cx(
-        // The 1px border is what defines the lift — the ramp is deliberately subtle, so the card
-        // never relies on fill alone to separate from the canvas.
-        "rounded-sm border border-datum-slate/30 bg-datum-cardbg shadow-[0_1px_0_0_rgba(255,255,255,0.03)_inset,0_2px_8px_-2px_rgba(0,0,0,0.45)]",
+        // Gray instrument surface on the navy stage. The fill step off the canvas is deliberately
+        // narrow (1.115:1 in the mockup) — the header band below carries the depth.
+        "overflow-hidden rounded-sm border border-app-line/30 bg-app-card shadow-[0_2px_8px_-2px_rgba(0,0,0,0.45)]",
         className,
       )}
     >
       {title ? (
-        <header className="flex items-center justify-between gap-3 border-b border-datum-slate/25 px-4 py-2.5">
+        // The header band: a LIGHTER plane + a hairline rule. This is the mockup's strongest depth
+        // cue (1.391:1 against the card body) — not decoration.
+        <header className="flex items-center justify-between gap-3 border-b border-app-line/30 bg-app-card-header px-4 py-2.5">
           <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-white">{title}</h2>
           {actions ? <div className="shrink-0">{actions}</div> : null}
         </header>
@@ -89,10 +96,11 @@ export function Field({
 }) {
   return (
     <div className={cx("flex flex-col gap-1.5", className)}>
-      <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-datum-slate">{label}</span>
+      <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-app-line">{label}</span>
       <div
         className={cx(
-          "rounded-sm border border-datum-slate/30 bg-datum-darknavy px-3 py-2 text-sm text-white",
+          // Punched INTO the card (1.278:1 darker) — the second half of the depth.
+          "rounded-sm border border-app-line/25 bg-app-inset px-3 py-2 text-sm text-white",
           mono && "font-mono",
         )}
       >

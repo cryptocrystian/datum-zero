@@ -1,24 +1,57 @@
 @import "tailwindcss";
 
-/* Datum Zero — industrial dark mode (docs/DESIGN-SYSTEM.md). Tokens via Tailwind v4 @theme. */
+/* Datum Zero — tiered design system v2 (docs/DESIGN-SYSTEM.md). Tokens via Tailwind v4 @theme.
+   brand.* = shared DNA · app.* = Tactical HUD · marketing.* = defined in the doc, not built. */
 @theme {
-  /* --- Elevation ramp (M3-1, CR-38) — darkest canvas, lifted cards, insets punched back down.
-     The Brand Guide hexes are UNCHANGED; M3-1 corrected which surface each one paints. They were
-     inverted: the canvas was the LIGHTEST surface (#1A253A) and cards were darker than the stage
-     they sat on (1.14:1), so every card receded instead of lifting. That inversion — not a missing
-     component pass — is what read as "flat". Ordering is guardrail-enforced by luminance, so it
-     cannot silently invert again. --- */
-  --color-datum-midnight: #121926; /* 1. canvas — content stage, the DARKEST plane */
-  --color-datum-panel: #151926; /* 2. panel — secondary/subdued surface between canvas and card */
-  --color-datum-cardbg: #1a253a; /* 3. card — LIFTED; always paired with a 1px border */
-  --color-datum-darknavy: #121926; /* 4. inset — field box inside a card; also the sidebar rail */
-  --color-datum-slate: #6d7278; /* borders, crosshairs, idle, secondary text */
+  /* ============ brand.* — the shared DNA (app + marketing) ============ */
+  --color-brand-gold: #e9d700; /* SIGNATURE — the insignia + the marketing site carry this */
+  --color-brand-goldmuted: #c49f30;
+
+  /* ============ app.* — Tactical HUD =================================
+     SAMPLED from docs/design/mockups/Dashboard mockup.png (Pillow patch-median, never eyeballed).
+     Cards are neutral GRAY on a navy stage — that contrast is much of the tactical read. Do not
+     "correct" them back to navy.
+
+     Depth does NOT come from the fill ramp. Measured on the mockup:
+       canvas -> card    1.115:1   (nearly nothing)
+       card   -> header  1.391:1   <- the depth
+       card   -> inset   1.278:1   <- the depth
+     M3-1 shipped a 1.148:1 ramp — already WIDER than the mockup — and it still read flat, because
+     Panel/Card/Field were wired to nothing. Widening canvas->card moves AWAY from the mockup.
+     Wire the components in instead. (CR-40) */
+  --color-app-canvas: #1c2739; /* the stage — navy */
+  --color-app-panel: #232a35; /* secondary surface between canvas and card */
+  --color-app-card: #2f2e33; /* the instrument card — neutral GRAY */
+  --color-app-card-header: #3e454f; /* card header band — notably lighter than the card */
+  --color-app-inset: #1b1b1c; /* field box — near-black, punched INTO the card */
+  --color-app-nav-active: #162137; /* active sidebar row — navy, never gold */
+  --color-app-action-steel: #4f647b; /* [ DISPATCH TICKET ] fill */
+  --color-app-line: #6d7278; /* borders, hairline rules, idle, secondary text */
+
+  /* Gold in-app: the focus/selection ring ONLY, and nothing else (CR-40).
+     B (current): scarce gold ring. A: neutral ring, zero app gold — flip this one line.
+     Forbidden in-app regardless: gold on nav, on ΔT/key metrics, on the action, or as any fill. */
+  --color-app-focus: #e9d700; /* option B — swap to #6d7278 for option A */
+
+  /* ============ functional colour — operational meaning, not brand ============ */
+  --color-status-green: #3fb950; /* nominal · System Status: OK · node activity */
+  --color-tactical-red: #8a2424; /* reject · critical */
+  --color-iec-cat1: #facc15; /* IEC TS 62446-3 Cat 1 — monitor */
+  --color-iec-cat2: #ff8a00; /* Cat 2 — scheduled */
+  --color-iec-cat3: #ff2e2e; /* Cat 3 — prompt/safety */
+
+  /* ============ legacy aliases — retire as pages adopt app.* ============
+     Kept so the ~25 existing hand-rolled surfaces inherit the sampled palette without a rebuild.
+     Values are the app.* planes above; the guardrail asserts they stay in agreement. */
+  --color-datum-midnight: #1c2739; /* -> app-canvas */
+  --color-datum-panel: #232a35; /* -> app-panel */
+  --color-datum-cardbg: #2f2e33; /* -> app-card */
+  --color-datum-darknavy: #1b1b1c; /* -> app-inset */
+  --color-datum-slate: #6d7278; /* -> app-line */
   --color-datum-charcoal: #2e2e2e; /* deep dividers */
 
-  --color-tactical-gold: #e9d700; /* emphasis only — active focal markers, calculated anomalies */
-  --color-tactical-goldmuted: #c49f30; /* secondary gold / hover */
-  --color-tactical-red: #8a2424; /* rejected logs, out-of-spec variances */
-  --color-status-green: #3fb950; /* System Status: OK — success only */
+  --color-tactical-gold: #e9d700; /* -> brand-gold (insignia/marketing; NOT an app accent) */
+  --color-tactical-goldmuted: #c49f30;
 
   /* Interface = Inter (Vertex Sans fallback); Data = JetBrains Mono (Datum Mono fallback). */
   --font-sans: var(--font-inter), "Vertex Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -27,14 +60,14 @@
 
 html,
 body {
-  background-color: var(--color-datum-midnight);
+  background-color: var(--color-app-canvas);
   color: #ffffff;
   font-family: var(--font-sans);
 }
 
 /* Subtle blueprint-grid texture for tactical insets. */
 .blueprint-grid {
-  background-color: var(--color-datum-darknavy);
+  background-color: var(--color-app-inset);
   background-image:
     linear-gradient(rgba(109, 114, 120, 0.12) 1px, transparent 1px),
     linear-gradient(90deg, rgba(109, 114, 120, 0.12) 1px, transparent 1px);
