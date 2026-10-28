@@ -1,7 +1,8 @@
 # Datum Zero Systems — Core System Manifest
 
-**Version:** 1.5.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
+**Version:** 1.6.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
 
+> **Changelog — 1.6.0:** index CR-42 (capture-source generalization — `CaptureAgent`/`CapturePlatform` + pluggable compliance-profile seam + autonomous ingestion path; additive, non-drone profiles demand-gated). Generalizes the CR-11 verified-airframe language and the CR-10/CR-33 insurance gating to a per-modality compliance profile. No commandment change.
 > **Changelog — 1.5.0:** index CR-41 (tamper-evident audit ledger — hardens CR-12's immutable audit trail: append-only hash-chain + KMS signatures + optional external anchoring; **no blockchain, no token**). No commandment change.
 > **Changelog — 1.4.0:** DET-1c amends CR-15 — the RuleSet role evolves from "classification-type spine (ΔT thresholds)" → "client-policy spine." The learned model (CR-19) OWNS the anomaly type: the classification is served through the inference callback and persisted as the authority (`standardRef` + `classification`); the RuleSet applies the client's configurable POLICY over it → `priority` (combine class + ΔT) + `routeTargets` + evidence-framed `recommendation`. Standards still anchor the measurement layer; the 100% human QA gate is unchanged (CR-12). No commandment change.
 > **Changelog — 1.3.0:** DET-1a supersedes CR-19's ΔT-cutoff *method* with a learned MobileNetV3-small classifier + a class→IEC TS 62446-3 map (`docs/DETECTOR-RESEARCH.md`); the category assignments remain provisional (CR-19 stays 🔎). No commandment change.
@@ -37,8 +38,9 @@ These override any generic best-practice default. When in doubt, obey these.
 
 ## 1. What we are building
 
-A headless verification layer for heavy-industry physical assets. Reality capture (drone thermal/RGB,
-360° video, IoT) is validated on-site, analyzed against standards-based tolerances, reviewed by a human,
+A headless verification layer for heavy-industry physical assets. Reality capture (any drone, ground/legged
+robot, or fixed sensor — thermal/RGB, 360° video, IoT) is validated on-site, analyzed against standards-based
+tolerances, reviewed by a human,
 and emitted as an evidence-framed work order into whatever system the client already runs.
 
 **Beachhead:** Renewables / solar thermal. Highest core-app weighting, most tractable CV, crisp
@@ -137,6 +139,11 @@ Full schema: [`packages/db/prisma/schema.prisma`](./packages/db/prisma/schema.pr
   `coverageVerified`. *(CR-02, CR-03, CR-09, CR-10)*
 - **Verified airframe registry.** `PilotHardware.ndaaVerified` + `approvedListRef`; `IngestionSession`
   binds to it and defaults `isNdaaVerified = false`. *(CR-11)*
+- **Capture is agent-agnostic.** `CaptureAgent` (a human pilot *or* an autonomous system, by `agentKind`)
+  + `CapturePlatform` + a pluggable **compliance profile**; aviation insurance + NDAA airframe verification
+  are the `AVIATION_PART107_NDAA` profile, not a universal gate. The dispatch gate (CR-33) evaluates the
+  applicable profile per modality. The pilot-marketplace + aviation-insurance rails are a beachhead/human-
+  pilot module (CR-01–CR-10), demand-driven beyond it (CR-14). *(CR-42)*
 
 ---
 
@@ -191,6 +198,10 @@ The suite makes us universally compatible on day one. Contract:
   verify via provider API (on-demand) or COI vendor (BYO); re-verify just before the flight window.
 - **NDAA / Remote ID (CR-11):** platform-enforced verified airframe registry + capture-time serial
   match from telemetry. Do **not** claim in-browser NDAA attestation or live Remote-ID capture.
+- **Compliance profiles (CR-42):** the insurance + NDAA requirements above are the `AVIATION_PART107_NDAA`
+  profile — the default for human-piloted drones; other capture modalities resolve a different (often
+  lighter/null) profile through the compliance seam, and the dispatch gate evaluates the applicable profile,
+  never hardcoded aviation. Fail-closed and never-bind hold across every profile (CR-03/33).
 - **Tenancy & secrets:** `organizationId` scoping everywhere; RLS as defense-in-depth; secrets in AWS
   Secrets Manager, never the DB.
 - **Legal facilitation (CR-04, open):** embedded referral model (insurer = seller of record); confirm
@@ -225,13 +236,13 @@ Every rule here traces to a locked decision in [`docs/PRD-Corrections-Log.md`](.
 
 | Area | Decisions |
 |---|---|
-| Insurance provider / model / verification | CR-01, CR-03, CR-04, CR-10 |
+| Insurance provider / model / verification | CR-01, CR-03, CR-04, CR-10, CR-42 |
 | Coverage adequacy & additional-insured | CR-02, CR-09 |
 | Integrations / adapters | CR-05, CR-14 |
 | Headless vs. cockpit / QA gate | CR-06, CR-12 |
 | Beachhead | CR-07 |
 | Marketplace sequencing | CR-08 |
-| Infield Validator / NDAA / Remote ID | CR-11 |
+| Infield Validator / NDAA / Remote ID | CR-11, CR-42 |
 | Adjudication boundary & audit | CR-12, CR-41 |
 | Asset Registry | CR-13 |
 | Milestone ladder & generic adapter | CR-14 |
@@ -241,6 +252,7 @@ Every rule here traces to a locked decision in [`docs/PRD-Corrections-Log.md`](.
 | Marketing-copy posture | CR-18 |
 | Provisional classification thresholds | CR-19 |
 | Authentication & sessions | CR-20 |
+| Capture-source generalization | CR-42 |
 
 ---
 
