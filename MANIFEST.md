@@ -1,7 +1,8 @@
 # Datum Zero Systems — Core System Manifest
 
-**Version:** 1.4.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
+**Version:** 1.5.0 · **Status:** Authoritative · **Applies to:** all threads, code-gen, and hires
 
+> **Changelog — 1.5.0:** index CR-41 (tamper-evident audit ledger — hardens CR-12's immutable audit trail: append-only hash-chain + KMS signatures + optional external anchoring; **no blockchain, no token**). No commandment change.
 > **Changelog — 1.4.0:** DET-1c amends CR-15 — the RuleSet role evolves from "classification-type spine (ΔT thresholds)" → "client-policy spine." The learned model (CR-19) OWNS the anomaly type: the classification is served through the inference callback and persisted as the authority (`standardRef` + `classification`); the RuleSet applies the client's configurable POLICY over it → `priority` (combine class + ΔT) + `routeTargets` + evidence-framed `recommendation`. Standards still anchor the measurement layer; the 100% human QA gate is unchanged (CR-12). No commandment change.
 > **Changelog — 1.3.0:** DET-1a supersedes CR-19's ΔT-cutoff *method* with a learned MobileNetV3-small classifier + a class→IEC TS 62446-3 map (`docs/DETECTOR-RESEARCH.md`); the category assignments remain provisional (CR-19 stays 🔎). No commandment change.
 > **Changelog — 1.2.0:** index CR-18 (marketing-copy posture), CR-19 (provisional classification thresholds), and CR-20 (real auth + sessions) in §9. No commandment change.
@@ -181,6 +182,10 @@ The suite makes us universally compatible on day one. Contract:
 
 - **Adjudication boundary (CR-12):** evidence + recommendation only; 100% human QA before dispatch;
   immutable audit trail on every anomaly; regex-guard client-facing text against verdict language.
+- **Audit integrity (CR-41):** the CR-12 trail is append-only + hash-chained (DB-enforced — the runtime role
+  has no UPDATE/DELETE), KMS-signed for non-repudiation, and — as an optional compliance tier — externally
+  anchored (RFC-3161 / OpenTimestamps) so integrity is provable against DatumZero itself. "Tamper-evident,"
+  never "blockchain," in client-facing copy.
 - **Insurance (CR-03/09/10):** referral-only, verify-never-bind, fail closed; require pilots to carry a
   **dedicated aviation policy with blanket AI + primary/non-contributory + waiver of subrogation**;
   verify via provider API (on-demand) or COI vendor (BYO); re-verify just before the flight window.
@@ -227,7 +232,7 @@ Every rule here traces to a locked decision in [`docs/PRD-Corrections-Log.md`](.
 | Beachhead | CR-07 |
 | Marketplace sequencing | CR-08 |
 | Infield Validator / NDAA / Remote ID | CR-11 |
-| Adjudication boundary & audit | CR-12 |
+| Adjudication boundary & audit | CR-12, CR-41 |
 | Asset Registry | CR-13 |
 | Milestone ladder & generic adapter | CR-14 |
 | Standards-based RuleSets | CR-15 |
