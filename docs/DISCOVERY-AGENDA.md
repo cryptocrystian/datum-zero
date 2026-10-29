@@ -1,12 +1,36 @@
 # Datum Zero — Customer Discovery Agenda
 
-**Status:** active playbook. **Purpose:** de-risk the four load-bearing assumptions behind the v1.0
-repositioning *before* any heavy build or GTM spend. Pairs with [`GTM-STRATEGY.md`](./GTM-STRATEGY.md) §12
-and [`GTM-PASS-2026-10.md`](./GTM-PASS-2026-10.md) §6. This is validation, not selling.
+**Status:** **non-blocking / opportunistic — NOT a build gate** (revised 2026-10-29). **Purpose:** record the
+working assumptions we build on, and keep a lightweight toolkit for validating them *opportunistically* —
+primarily through the first concierge/lighthouse account (M1 was designed for exactly this), not a blocking
+interview sprint. Pairs with [`GTM-STRATEGY.md`](./GTM-STRATEGY.md) §12 and
+[`GTM-PASS-2026-10.md`](./GTM-PASS-2026-10.md) §6. This is validation, not selling.
 
-> **The one-sentence job of this agenda:** find out, from real buyers and the artifacts of real deals,
-> whether people will *pay for a verified, routed, provenanced work order* — or whether we've talked
-> ourselves into a thesis the market doesn't reward. We are hunting for reasons we are **wrong**.
+> **Why non-blocking:** none of the four assumptions, if wrong, forces a teardown — each lands on a deferred
+> or reversible layer (pricing/metering, messaging) or a low-regret feature, never the spine. The
+> pivot-friendly architecture absorbs the risk, so we build on priors now and let the first real customer
+> validate better (and cheaper) than any interview could. §0 is what we're building on; §§1–9 are the
+> opportunistic toolkit, retained for when a real conversation presents itself.
+
+---
+
+## 0. Working assumptions (what we build on now)
+
+We adopt these as priors and build against them. For each: the layer it affects, why being wrong is cheap to
+correct, and the free signal — from the first lighthouse account — that would make us revisit. **No build
+waits on validating these.**
+
+| # | Working assumption (the prior we build on) | Layer it affects · reversibility | Revisit trigger (free signal) |
+|---|---|---|---|
+| **A1** | Standards-anchored classification (IEC TS 62446-3) is a credibility/quality asset and a requirement for a meaningful share of regulated / lender-backed projects. | Standards/RuleSet layer · **low-regret** (good product regardless; worst case we stop deepening conformance). | First lighthouse contract / IE scope either names a standard or doesn't. |
+| **A2** | Automated fault→work-order routing into the client's CMMS is under-served and valued. | Routing/outbox · **already built, generic; reversible messaging.** | Does the first customer's current process actually lose findings? Watch their handoff. |
+| **A3** *(hold loosest)* | The verified, routed work order is the unit of value and commands a premium over raw analytics. | Pricing/metering · **deferred (M1.5) + highly reversible** (meters on `WorkOrderDispatch`; unit swap is a query). | What the first customer actually pays, and what survives their procurement. **Discipline: do not build billing/metering until a real deal prices itself.** |
+| **A4** | Auditable / chain-of-custody evidence is preferred (beyond NDAA) in federal/regulated buying; the EU AI Act makes provenance a demand driver for EU/enterprise regardless. | CR-41 ledger (built for EU-AI-Act reasons anyway) + messaging · **messaging-only reversibility.** | First federal RFP / enterprise contract language. |
+
+**The standing discipline that keeps pivots cheap:** don't over-build the assumption-dependent surfaces
+(billing/metering, any paid provenance tier) ahead of real signal, and honor the CR-42 compliance-profile
+seam when touching the pilot cluster. Do that and every revisit above stays a config/messaging change, not a
+rebuild.
 
 ---
 

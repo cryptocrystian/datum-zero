@@ -230,10 +230,14 @@ Skydio/Parrot fleets, *and* autonomous robots behind one ingestion seam.
 
 ---
 
-## 12. Assumptions to validate — the discovery agenda (do before heavy build)
+## 12. Working assumptions (build on these; validate opportunistically — not a build gate)
 
-These are load-bearing and currently **asserted, not evidenced** (see GTM-PASS §6). Treat as the customer-
-discovery agenda, not facts to design against:
+These are load-bearing and, externally, **asserted more than evidenced** (see GTM-PASS §6) — but none, if
+wrong, forces a teardown; each lands on a deferred/reversible layer or a low-regret feature (see
+[`DISCOVERY-AGENDA.md`](./DISCOVERY-AGENDA.md) §0). So we **build on them as working assumptions now** and
+validate *opportunistically* via the first concierge/lighthouse account, not a blocking interview sprint.
+The one to hold loosest is #3 — it sets pricing, so keep billing/metering unbuilt until a real deal prices
+it:
 
 1. **Standards-classified documentation is a buying requirement.** IEC TS 62446-3 is a 2017 TS, not shown
    mandatory anywhere; no insurer/lender tie found. *Test with O&M buyers / lenders' technical advisors.*
