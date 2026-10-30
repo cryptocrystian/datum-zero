@@ -1,6 +1,7 @@
-import { prisma, QueueStatus, SpatialBindingStatus } from "@dz/db";
+import { prisma, QueueStatus, SpatialBindingStatus, runSerializedOrgTx } from "@dz/db";
 import { applyClientPolicy } from "../rules/classify";
 import { dispatchAnomaly } from "../outbox/dispatch";
+import { appendAuditEntry } from "../audit/ledger";
 
 /**
  * M0-08 — QA review service (CR-12). Every query is organizationId-scoped (multi-tenant native).
@@ -43,6 +44,8 @@ export interface IntegrationDTO {
   id: string;
   targetType: string;
   displayName: string;
+  /** Host only (no path, no secrets) of the configured delivery endpoint, for reviewer context. */
+  endpointHint: string | null;
 }
 
 const num = (x: unknown): number | null => (x == null ? null : Number(x));
@@ -124,13 +127,31 @@ export async function listOrgSites(organizationId: string): Promise<string[]> {
   return [...sites].sort();
 }
 
+/** Best-effort host extraction from an integration's config — host only, never the path or any secret. */
+function endpointHostOf(config: unknown): string | null {
+  if (!config || typeof config !== "object") return null;
+  const c = config as Record<string, unknown>;
+  const raw = c.endpoint ?? c.url ?? c.baseUrl ?? c.webhookUrl;
+  if (typeof raw !== "string") return null;
+  try {
+    return new URL(raw).host;
+  } catch {
+    return null;
+  }
+}
+
 export async function listOrgIntegrations(organizationId: string): Promise<IntegrationDTO[]> {
   const rows = await prisma.integration.findMany({
     where: { organizationId, isActive: true },
     orderBy: { displayName: "asc" },
-    select: { id: true, targetType: true, displayName: true },
+    select: { id: true, targetType: true, displayName: true, config: true },
   });
-  return rows.map((i) => ({ id: i.id, targetType: i.targetType, displayName: i.displayName }));
+  return rows.map((i) => ({
+    id: i.id,
+    targetType: i.targetType,
+    displayName: i.displayName,
+    endpointHint: endpointHostOf(i.config),
+  }));
 }
 
 /** Approve → APPROVED_DISPATCHED + reviewer stamps. Only a BOUND, PENDING_QA anomaly is eligible. */
@@ -144,9 +165,23 @@ export async function approveAnomaly(anomalyId: string, organizationId: string, 
   if (anomaly.spatialBindingStatus !== SpatialBindingStatus.BOUND) {
     throw new Error("cannot approve an unbound anomaly — bind it to an asset first (CR-13)");
   }
-  await prisma.anomaly.update({
-    where: { id: anomalyId },
-    data: { status: QueueStatus.APPROVED_DISPATCHED, reviewedById: reviewerId, reviewedAt: new Date() },
+  const reviewedAt = new Date();
+  // The QA determination + its append-only audit entry commit ATOMICALLY and SERIALIZED per org
+  // (CR-41): runSerializedOrgTx sets the RLS GUC + a per-org advisory lock. The guarded updateMany
+  // (status = PENDING_QA) makes the transition idempotent — a double-approve appends at most once.
+  await runSerializedOrgTx(organizationId, `audit:${organizationId}`, async (tx) => {
+    const res = await tx.anomaly.updateMany({
+      where: { id: anomalyId, organizationId, status: QueueStatus.PENDING_QA },
+      data: { status: QueueStatus.APPROVED_DISPATCHED, reviewedById: reviewerId, reviewedAt },
+    });
+    if (res.count === 1) {
+      await appendAuditEntry(tx, {
+        organizationId,
+        anomalyId,
+        entryType: "QA_APPROVAL",
+        payload: { status: "APPROVED_DISPATCHED", reviewedById: reviewerId, reviewedAt: reviewedAt.toISOString() },
+      });
+    }
   });
   // Dispatch ONLY through the guarded entry point — the 100% QA gate re-runs there (CR-12).
   await dispatchAnomaly(anomalyId, organizationId);
@@ -160,9 +195,21 @@ export async function rejectAnomaly(anomalyId: string, organizationId: string, r
   });
   if (!anomaly) throw new Error("anomaly not found in org");
   if (anomaly.status !== QueueStatus.PENDING_QA) throw new Error("anomaly is not awaiting QA");
-  await prisma.anomaly.update({
-    where: { id: anomalyId },
-    data: { status: QueueStatus.REJECTED_FALSE_POSITIVE, reviewedById: reviewerId, reviewedAt: new Date() },
+  const reviewedAt = new Date();
+  // Atomic + serialized determination + audit entry, idempotent on a double-reject (CR-41).
+  await runSerializedOrgTx(organizationId, `audit:${organizationId}`, async (tx) => {
+    const res = await tx.anomaly.updateMany({
+      where: { id: anomalyId, organizationId, status: QueueStatus.PENDING_QA },
+      data: { status: QueueStatus.REJECTED_FALSE_POSITIVE, reviewedById: reviewerId, reviewedAt },
+    });
+    if (res.count === 1) {
+      await appendAuditEntry(tx, {
+        organizationId,
+        anomalyId,
+        entryType: "QA_REJECTION",
+        payload: { status: "REJECTED_FALSE_POSITIVE", reviewedById: reviewerId, reviewedAt: reviewedAt.toISOString() },
+      });
+    }
   });
 }
 

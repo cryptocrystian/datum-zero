@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { prisma, runWithOrg, SpatialBindingStatus } from "@dz/db";
+import { prisma, runWithOrg, SpatialBindingStatus, runSerializedOrgTx } from "@dz/db";
 import { bindUnboundAnomalies } from "@/lib/binding/spatial-binding";
 import { applyPolicyToBoundAnomalies } from "@/lib/rules/classify";
+import { appendAuditEntry } from "@/lib/audit/ledger";
 import { validateInferenceCallback } from "@dz/adapters";
 
 // Needs Node APIs (crypto, Prisma) — not the edge runtime.
@@ -142,11 +143,32 @@ export async function POST(req: NextRequest) {
       // status left at its PENDING_QA default; nothing dispatches while unbound (fail closed).
     };
 
-    const anomaly = await prisma.anomaly.upsert({
-      where: { id: anomalyId },
-      update: evidence,
-      create: { id: anomalyId, ...evidence },
-      select: { id: true },
+    // Persist the model determination AND — on first creation only (idempotent on replay) — its
+    // append-only audit entry, atomically + serialized per org (CR-41). runSerializedOrgTx sets the
+    // RLS GUC + a per-org advisory lock; the per-op GUC extension cannot compose inside an interactive
+    // transaction, so the base-client tx sets it once.
+    await runSerializedOrgTx(organizationId, `audit:${organizationId}`, async (tx) => {
+      const existing = await tx.anomaly.findUnique({ where: { id: anomalyId }, select: { id: true } });
+      await tx.anomaly.upsert({
+        where: { id: anomalyId },
+        update: evidence,
+        create: { id: anomalyId, ...evidence },
+        select: { id: true },
+      });
+      if (!existing) {
+        await appendAuditEntry(tx, {
+          organizationId,
+          anomalyId,
+          entryType: "MODEL_CALLBACK",
+          payload: {
+            classification,
+            standardRef: standardRefIn,
+            metricDelta: d.metric_delta,
+            confidenceScore: d.confidence_score,
+            modelVersion,
+          },
+        });
+      }
     });
 
     // Post-detection pipeline (distinct stages, each in its own lib): bind (M0-06) then apply the
@@ -156,7 +178,7 @@ export async function POST(req: NextRequest) {
     await applyPolicyToBoundAnomalies(organizationId);
 
     const final = await prisma.anomaly.findFirst({
-      where: { id: anomaly.id, organizationId },
+      where: { id: anomalyId, organizationId },
       select: {
         id: true,
         spatialBindingStatus: true,

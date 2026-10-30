@@ -14,18 +14,15 @@ import { type AuditCore, type ChainEntry, type ChainVerification, type LedgerEnt
 // Re-export the pure chain API so callers import ledger math + I/O from one place.
 export * from "./ledger-chain";
 
-/** A Prisma client (or interactive transaction client) exposing the auditLogEntry model. */
-type LedgerClient = Pick<typeof prisma, "auditLogEntry">;
-
 /**
  * Append one entry to the org's chain. Reads the latest entry's contentHash as prevHash, computes
- * this entry's contentHash, and inserts. MUST run inside a bound org context (runWithOrg) so RLS
- * scopes it. Because the prevHash read + insert must not interleave with a concurrent append, the
- * caller serializes appends within the determination's transaction (wiring into approve/reject +
- * a per-org advisory lock land in M2-9b). Returns the created entry's id + hashes.
+ * this entry's contentHash, and inserts. MUST be called with the transaction client from
+ * `runSerializedOrgTx` (@dz/db): it sets the RLS GUC and holds a per-org advisory lock, so the
+ * prevHash read + insert are serialized and commit atomically with the determination write that
+ * precedes it in the same transaction. Returns the created entry's id + hashes.
  */
 export async function appendAuditEntry(
-  client: LedgerClient,
+  client: Prisma.TransactionClient,
   core: AuditCore,
 ): Promise<{ id: string; contentHash: string; prevHash: string | null }> {
   const latest = await client.auditLogEntry.findFirst({

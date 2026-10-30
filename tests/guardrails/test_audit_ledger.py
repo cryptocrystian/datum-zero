@@ -22,6 +22,9 @@ SCHEMA = ROOT / "packages/db/prisma/schema.prisma"
 MIGRATIONS = ROOT / "packages/db/prisma/migrations"
 LEDGER = ROOT / "apps/web/lib/audit/ledger.ts"           # DB append/verify I/O
 LEDGER_CHAIN = ROOT / "apps/web/lib/audit/ledger-chain.ts"  # PURE hash-chain math (no DB)
+DB_INDEX = ROOT / "packages/db/src/index.ts"
+REVIEW = ROOT / "apps/web/lib/qa/review.ts"
+CALLBACK = ROOT / "apps/web/app/api/v1/inference/callback/route.ts"
 
 
 def _ledger_migration_sql():
@@ -91,3 +94,23 @@ def test_verify_audit_chain_is_read_only():
         "executeRaw",
     ]:
         assert write not in body, f"verifyAuditChain must be read-only — found {write}"
+
+
+def test_serialized_org_tx_helper_sets_guc_and_advisory_lock():
+    # M2-9b: the append must be ATOMIC + SERIALIZED — the helper sets the RLS GUC and a per-org
+    # advisory lock inside one base-client transaction (the per-op GUC extension can't compose inside
+    # an interactive tx).
+    src = DB_INDEX.read_text()
+    assert "export async function runSerializedOrgTx" in src, "@dz/db must expose runSerializedOrgTx (M2-9b)"
+    assert "set_config('app.current_org'" in src, "the serialized tx must set the RLS GUC on its connection"
+    assert "pg_advisory_xact_lock" in src, "the serialized tx must hold a per-org advisory lock"
+
+
+def test_determinations_append_to_the_ledger():
+    # M2-9b: every determination point writes an append-only audit entry (CR-41/CR-12).
+    review = REVIEW.read_text()
+    assert "appendAuditEntry" in review and "runSerializedOrgTx" in review, "QA review must append via the serialized tx"
+    assert "QA_APPROVAL" in review and "QA_REJECTION" in review, "approve AND reject must record their determination"
+    cb = CALLBACK.read_text()
+    assert "appendAuditEntry" in cb and "MODEL_CALLBACK" in cb, "the inference callback must record the model determination"
+    assert "runSerializedOrgTx" in cb, "the callback append must be serialized + atomic with the upsert"

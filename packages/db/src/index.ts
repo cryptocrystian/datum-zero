@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 
 // Singletons (avoid exhausting connections / re-creating the ALS during dev hot-reload).
 const globalForPrisma = globalThis as unknown as {
@@ -56,6 +56,29 @@ export const prisma = basePrisma.$extends({
  */
 export function runWithOrg<T>(organizationId: string, fn: () => Promise<T>): Promise<T> {
   return orgContext.run(organizationId, fn);
+}
+
+/**
+ * Run `fn` inside ONE interactive transaction with the RLS GUC `app.current_org` set transaction-local
+ * and a per-`lockKey` advisory lock held for its duration. For multi-statement tenant writes that must
+ * be ATOMIC and SERIALIZED — e.g. the append-only audit ledger's read-prevHash → insert (CR-41): the
+ * determination write and its ledger entry commit together, and concurrent appends for the same key
+ * can't interleave (so the hash chain never forks).
+ *
+ * The BASE (non-extended) client is used deliberately: the RLS query extension wraps each op in its
+ * OWN set_config transaction, which cannot compose inside an interactive transaction — so here the GUC
+ * is set once, manually, on the transaction's connection, and every `tx` op inside is RLS-scoped.
+ */
+export async function runSerializedOrgTx<T>(
+  organizationId: string,
+  lockKey: string,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return basePrisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.current_org', ${organizationId}, true)`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+    return fn(tx);
+  });
 }
 
 /**
