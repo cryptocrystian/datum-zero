@@ -515,3 +515,33 @@ model CaptureQualityEvent {
   @@index([organizationId, createdAt])
   @@index([ingestionSessionId])
 }
+
+// ============================================================================
+// 8. TAMPER-EVIDENT AUDIT LEDGER (CR-41) — append-only, hash-chained determination log.
+// Hardens CR-12's immutable audit trail: each entry hash-chains to the prior entry (per org) via
+// prevHash → contentHash, so any post-hoc alteration breaks the chain and `verifyAuditChain` catches
+// it. Append-only is DB-enforced — the M2-9a migration REVOKEs UPDATE/DELETE on this table from the
+// runtime role datumzero_app (it keeps INSERT + SELECT only). organizationId is denormalized (no FK),
+// RLS'd like every tenant table (CR-20). KMS signing (non-repudiation) + external anchoring are later
+// slices (M2-9b/c); this slice lands the chain + the append-only guarantee.
+// ============================================================================
+enum AuditEntryType {
+  MODEL_CALLBACK // inference persisted the measurement + classification (a determination)
+  QA_APPROVAL // reviewer approved → dispatch (CR-12 human gate)
+  QA_REJECTION // reviewer rejected as a false positive
+}
+
+model AuditLogEntry {
+  id             String         @id @default(uuid())
+  organizationId String // denormalized for tenant-scoped queries/RLS (no FK, like Anomaly)
+  anomalyId      String? // the determination this records; null for non-anomaly events
+  entryType      AuditEntryType
+  contentHash    String // SHA-256 over the canonicalized determination payload, linked to prevHash
+  prevHash       String? // previous entry's contentHash (per-org chain); null = genesis
+  payload        Json // the canonicalized determination snapshot that contentHash covers
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([anomalyId])
+}
