@@ -38,7 +38,8 @@ def jpeg_with_make(make: str, model: str | None = None) -> bytes:
 def tiff16(raw_value: int, shape=(4, 4)) -> bytes:
     arr = np.full(shape, raw_value, dtype=np.uint16)
     buf = io.BytesIO()
-    Image.fromarray(arr, mode="I;16").save(buf, format="TIFF")
+    # Pillow infers mode "I;16" from the uint16 dtype; the explicit mode= arg was removed in newer Pillow.
+    Image.fromarray(arr).save(buf, format="TIFF")
     return buf.getvalue()
 
 

@@ -34,7 +34,8 @@ def radiometric_tiff(base_c: float, hot_c: float, shape=(240, 300)) -> bytes:
     arr = np.full(shape, _dn(base_c), dtype=np.uint16)
     arr[100:130, 150:180] = _dn(hot_c)
     buf = io.BytesIO()
-    Image.fromarray(arr, mode="I;16").save(buf, format="TIFF")
+    # Pillow infers mode "I;16" from the uint16 dtype; the explicit mode= arg was removed in newer Pillow.
+    Image.fromarray(arr).save(buf, format="TIFF")
     return buf.getvalue()
 
 

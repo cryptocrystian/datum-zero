@@ -41,14 +41,16 @@ def radiometric_tiff(base_c, hot_c, shape=(240, 300), mutate=None) -> bytes:
     if mutate is not None:
         mutate(arr)
     buf = io.BytesIO()
-    Image.fromarray(arr, mode="I;16").save(buf, format="TIFF")
+    # Pillow infers mode "I;16" from the uint16 dtype; the explicit mode= arg was removed in newer Pillow.
+    Image.fromarray(arr).save(buf, format="TIFF")
     return buf.getvalue()
 
 
 def uniform_tiff(c, shape=(200, 200)) -> bytes:
     arr = np.full(shape, _dn(c), dtype=np.uint16)
     buf = io.BytesIO()
-    Image.fromarray(arr, mode="I;16").save(buf, format="TIFF")
+    # Pillow infers mode "I;16" from the uint16 dtype; the explicit mode= arg was removed in newer Pillow.
+    Image.fromarray(arr).save(buf, format="TIFF")
     return buf.getvalue()
 
 

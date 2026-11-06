@@ -26,7 +26,8 @@ def _radiometric_sample() -> bytes:
     arr = np.full((240, 300), int(round((27.0 + 273.15) * 100.0)), dtype=np.uint16)
     arr[100:130, 150:180] = int(round((57.0 + 273.15) * 100.0))
     buf = io.BytesIO()
-    Image.fromarray(arr, mode="I;16").save(buf, format="TIFF")
+    # Pillow infers mode "I;16" from the uint16 dtype; the explicit mode= arg was removed in newer Pillow.
+    Image.fromarray(arr).save(buf, format="TIFF")
     return buf.getvalue()
 
 
