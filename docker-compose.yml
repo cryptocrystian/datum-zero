@@ -34,34 +34,43 @@ services:
   # Object storage (MANIFEST §3). MinIO is the S3-compatible local stand-in for AWS S3.
   # Credentials here are LOCAL DEV ONLY — prod uses IAM roles / AWS Secrets Manager, never these.
   minio:
-    image: minio/minio:latest
+    # STOPGAP (2025): MinIO gated anonymous pulls of minio/minio + minio/mc, so neither CI nor an on-prem
+    # operator can pull them without Docker Hub auth. Bitnami's legacy namespace still serves REAL MinIO
+    # anonymously (frozen/unmaintained). This keeps S3 behavior identical (API :9000, console :9001). For
+    # prod/on-prem, MIRROR MinIO into your own registry (e.g. ECR) or authenticate the pull, then revert
+    # the image + restore the persistent volume below.
+    image: bitnamilegacy/minio:2025.7.23
     container_name: dz-minio
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      # Bitnami creates the dev bucket on startup — replaces the former mc-based minio-init container.
+      MINIO_DEFAULT_BUCKETS: datum-zero-dev
     ports:
       - "9000:9000" # S3 API
       - "9001:9001" # web console
-    volumes:
-      - dz_minio:/data
+    # No named volume while on the stopgap image: a fresh root-owned docker volume isn't writable by
+    # Bitnami's non-root user (1001). Persistence (dz_minio) returns when the official image is restored.
 
-  # One-shot init: wait for MinIO, then create the dev bucket. Exits 0 when done.
+  # One-shot readiness gate: wait until the dev bucket exists, then exit 0 (the minio service creates it
+  # via MINIO_DEFAULT_BUCKETS). minio/mc is gated too, so this uses curl instead — an anonymous GET on a
+  # bucket returns 403 (AccessDenied) once it exists, vs 404 before. The service name is kept so the
+  # web/inference `depends_on ... service_completed_successfully` contract is unchanged.
   minio-init:
-    image: minio/mc:latest
+    image: curlimages/curl:8.11.1
     container_name: dz-minio-init
     depends_on:
       - minio
-    entrypoint: >
-      /bin/sh -c "
-      until mc alias set local http://minio:9000 minioadmin minioadmin; do
-        echo 'waiting for minio...'; sleep 1;
-      done;
-      mc mb --ignore-existing local/datum-zero-dev;
-      echo 'minio bucket datum-zero-dev ready';
-      exit 0;
-      "
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until [ "$$(curl -s -o /dev/null -w '%{http_code}' http://minio:9000/datum-zero-dev/)" = "403" ]; do
+          echo 'waiting for minio bucket...'; sleep 1;
+        done
+        echo 'minio bucket datum-zero-dev ready'
+    restart: "no"
 
   # ==========================================================================
   # Application tier (M2-6a, CR-35) — prod PARITY + the on-prem deployment artifact.
